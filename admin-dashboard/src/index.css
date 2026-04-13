@@ -1,0 +1,156 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  @apply overflow-x-hidden scroll-smooth;
+}
+
+body {
+  @apply font-sans text-slate-800 antialiased overflow-x-hidden;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  background-color: #e8e4dc;
+}
+
+/* Shared shell background for all pages */
+.portal-shell-bg {
+  position: relative;
+  isolation: isolate;
+  background-color: #ebe6df;
+  background-image:
+    linear-gradient(
+      165deg,
+      rgba(252, 250, 246, 0.96) 0%,
+      rgba(245, 241, 232, 0.94) 45%,
+      rgba(235, 230, 220, 0.92) 100%
+    ),
+    radial-gradient(ellipse 70% 55% at 50% 36%, rgba(255, 255, 255, 0.72) 0%, transparent 62%);
+  background-size: auto;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.portal-shell-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("/splash-logo.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.16;
+}
+
+.portal-shell-bg > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Page structure */
+.page-title {
+  @apply text-xl font-bold tracking-tight text-slate-800 sm:text-2xl;
+}
+
+.page-subtitle {
+  @apply mt-1 text-sm text-slate-500;
+}
+
+/* Enterprise card styling */
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-200/90 bg-white;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+  }
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+  .card-hover:hover {
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  }
+  .card-header {
+    @apply border-b border-slate-100 px-5 py-4;
+  }
+  .card-title {
+    @apply text-base font-semibold text-slate-800;
+  }
+  .card-subtitle {
+    @apply text-sm text-slate-500;
+  }
+  .card-meta {
+    @apply text-xs text-slate-400;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-xl font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-sm {
+    @apply min-h-[40px] px-4 text-sm;
+  }
+  .btn-md {
+    @apply min-h-[44px] px-5 text-sm;
+  }
+  .btn-primary {
+    @apply btn btn-md text-white;
+    background-color: #0e5b45;
+  }
+  .btn-primary:hover {
+    background-color: #0b4737;
+  }
+  .btn-primary:focus {
+    --tw-ring-color: rgb(14 91 69 / 0.45);
+  }
+  .btn-secondary {
+    @apply btn btn-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-300;
+  }
+  .btn-ghost {
+    @apply btn btn-md text-slate-600 hover:bg-slate-100 focus:ring-slate-300;
+  }
+
+  /* Form inputs */
+  .input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition-colors focus:outline-none focus:ring-2;
+  }
+  .input:focus {
+    border-color: #0e5b45;
+    --tw-ring-color: rgb(14 91 69 / 0.2);
+  }
+
+  /* Alerts */
+  .alert-error {
+    @apply rounded-xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-800;
+  }
+  .alert-success {
+    @apply rounded-xl border border-emerald-200/80 bg-emerald-50 px-4 py-3 text-sm text-emerald-800;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .badge-view {
+    @apply badge bg-amber-100 text-amber-800;
+  }
+  .badge-edit {
+    @apply badge bg-emerald-100 text-emerald-800;
+  }
+
+  /* Table */
+  .table-header {
+    @apply border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider text-slate-500;
+  }
+  .table-cell {
+    @apply py-4 text-sm text-slate-700;
+  }
+}
+
+/* Smooth transitions */
+@layer utilities {
+  .transition-page {
+    @apply transition-all duration-200 ease-out;
+  }
+}

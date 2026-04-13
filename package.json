@@ -1,0 +1,15 @@
+{
+  "name": "inyatsi-sharing-file",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "cd admin-dashboard && npm run dev",
+    "build": "cd admin-dashboard && npm run build",
+    "preview": "cd admin-dashboard && npm run preview",
+    "backend": "cd backend && node server.js",
+    "backend:fastapi": "cd backend-fastapi && python -m uvicorn main:app --reload"
+  },
+  "dependencies": {
+    "expo": "54.0.0"
+  }
+}

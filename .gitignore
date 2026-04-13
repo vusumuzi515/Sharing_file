@@ -1,0 +1,57 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Build output
+dist/
+web-build/
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env.*
+**/.env
+**/.env.*
+.env*.local
+!.env.example
+!**/.env.example
+!**/.env.production.example
+
+# Nextcloud config (contains credentials)
+backend/config/nextcloud-config.json
+backend/config/users.json
+
+# typescript
+*.tsbuildinfo
+*.pyc
+
+# backend temp uploads
+backend/temp-uploads/
+backend/file-server/*
+!backend/file-server/inyatsi-config.example.json
+
+# persisted portal activity audit log (optional; may contain filenames)
+backend/data/activity-log.json
+
+# local editor / emulator state
+.expo/
+**/.expo/
+
+# python caches
+__pycache__/
+**/__pycache__/
+
+# .NET build artifacts
+bin/
+obj/
+**/bin/
+**/obj/

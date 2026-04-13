@@ -1,0 +1,50 @@
+{
+  "_comment": "Place as inyatsi-config.json at the WebDAV root (or local file-server folder). Departments and per-user department/permission here override live folder names. Portal login passwords are never stored here — use backend/config/users.json for sign-in.",
+  "portal": {
+    "uploadFileNaming": "unique-suffix"
+  },
+  "departments": [
+    {
+      "id": "engineering",
+      "folderPath": "/Engineering",
+      "label": "Engineering",
+      "permission": "edit"
+    },
+    {
+      "id": "engineering_site_reports",
+      "folderPath": "/Engineering Site Reports",
+      "label": "Engineering Site Reports",
+      "permission": "edit"
+    },
+    {
+      "id": "finance",
+      "folderPath": "/Finance Documents",
+      "label": "Finance & Accounts",
+      "permission": "edit"
+    },
+    {
+      "id": "lidwala",
+      "folderPath": "/Lidwala",
+      "label": "Lidwala Department",
+      "permission": "edit"
+    },
+    {
+      "id": "admin",
+      "folderPath": "/",
+      "label": "IT Administration",
+      "permission": "edit"
+    }
+  ],
+  "users": [
+    {
+      "employeeId": "engineer_demo",
+      "departmentId": "engineering",
+      "permission": "edit"
+    },
+    {
+      "employeeId": "finance_viewer",
+      "departmentId": "finance",
+      "permission": "view"
+    }
+  ]
+}

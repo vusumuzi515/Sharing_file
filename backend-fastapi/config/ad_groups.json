@@ -1,0 +1,36 @@
+{
+  "groups_to_departments": {
+    "Engineering": "engineering",
+    "Finance": "finance",
+    "IT-Admin": "admin",
+    "Site-Reports-View": "site-reports"
+  },
+  "departments": [
+    {
+      "id": "engineering",
+      "label": "Engineering",
+      "folder_path": "Engineering",
+      "permission": "edit"
+    },
+    {
+      "id": "finance",
+      "label": "Finance Documents",
+      "folder_path": "Finance Documents",
+      "permission": "edit"
+    },
+    {
+      "id": "admin",
+      "label": "IT Administration",
+      "folder_path": "/",
+      "permission": "edit"
+    },
+    {
+      "id": "site-reports",
+      "label": "Site Reports",
+      "folder_path": "Site Reports",
+      "permission": "view"
+    }
+  ],
+  "restricted_folders": ["site reports", "design documents"],
+  "admin_groups": ["IT-Admin"]
+}

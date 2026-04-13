@@ -1,0 +1,18 @@
+[
+  {
+    "employeeId": "engineer_demo",
+    "password": "change-me",
+    "name": "Engineering Demo User",
+    "role": "Engineer",
+    "departmentId": "engineering",
+    "permission": "edit"
+  },
+  {
+    "employeeId": "finance_viewer",
+    "password": "change-me",
+    "name": "Finance Demo User",
+    "role": "Viewer",
+    "departmentId": "finance",
+    "permission": "view"
+  }
+]
