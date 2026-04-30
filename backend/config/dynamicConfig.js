@@ -3,7 +3,7 @@
  * - Departments: optional inyatsi-config.json "departments" on the server; else live scan of root folders
  *   (automatic inheritance of folder layout); else static fallback from the API host.
  * - Reads optional inyatsi-config.json for labels, department permission (view/edit), user→department mapping
- * - Portal login: either users.json or (when NEXTCLOUD_PORTAL_AUTH=groups) Nextcloud WebDAV + group/folder checks — see server.js
+ * - Portal login: either users.json or a connected file-server auth source — see server.js
  */
 
 import fs from 'fs/promises';
@@ -11,9 +11,9 @@ import path from 'path';
 import { createClient as createWebdavClient } from 'webdav';
 
 const CONFIG_FILENAME = 'inyatsi-config.json';
-const CACHE_TTL_MS = 60 * 1000; // 1 min cache - avoid 429 rate limit from Nextcloud
+const CACHE_TTL_MS = 60 * 1000; // 1 min cache
 
-/** Nextcloud default/system folders - exclude from department list */
+/** Common system folders - exclude from department list */
 const EXCLUDED_FOLDER_NAMES = new Set([
   'documents', 'photos', 'templates', 'trashbin', '.trash', '.recycle',
   'shared', 'external', 'files', 'appdata', 'appdata_external', 'appdata_encrypted',
@@ -64,7 +64,7 @@ function extractFolderName(entry) {
   return segments[segments.length - 1] || bn || '';
 }
 
-/** Exported for server: merge OCS groups with real top-level folders (e.g. Lidwala folder without a matching NC group name). */
+/** Exported for server: merge discovered root folders with configured departments when using a WebDAV-compatible source. */
 export async function listRootFoldersWebDav(webdavClient) {
   try {
     const entries = await webdavClient.getDirectoryContents('/', { deep: false });
@@ -88,7 +88,7 @@ export async function listRootFoldersWebDav(webdavClient) {
         };
       });
   } catch (err) {
-    console.warn('[dynamicConfig] Nextcloud scan failed:', err?.message || err);
+    console.warn('[dynamicConfig] File-server scan failed:', err?.message || err);
     return [];
   }
 }
@@ -164,7 +164,7 @@ function mergeUsers(usersJson, configUsers) {
 
 /** Users listed in file-server config but missing from users.json (need a portal row to sign in). */
 const DEFAULT_PORTAL_POLICY = {
-  /** unique-suffix: timestamp prefix (safe default). preserve-name: same filename as upload — overwrite follows WebDAV/server ACL. */
+  /** unique-suffix: timestamp prefix (safe default). preserve-name: same filename as upload — overwrite follows server ACL. */
   uploadFileNaming: 'unique-suffix',
 };
 
@@ -214,7 +214,7 @@ export async function loadDynamicConfig(options = {}) {
     staticFallbackDepartments = [],
     portalPolicyOverrides = {},
     forceRefresh = false,
-    /** When true (Nextcloud groups mode), do not inject synthetic IT Administration — departments come from groups + folders only. */
+    /** When true, do not inject synthetic IT Administration — departments come only from the connected server. */
     skipAutoAdminDepartment = false,
   } = options;
 
@@ -252,7 +252,7 @@ export async function loadDynamicConfig(options = {}) {
   const departments = mergeDepartments(scanned, effectiveDeptConfig);
   const users = mergeUsers(usersJson, fileConfig?.users);
 
-  // Add admin department if not present (skipped when departments are driven by Nextcloud groups + folder merge)
+  // Add admin department if not present (skipped when departments are driven entirely by the connected server)
   if (!skipAutoAdminDepartment) {
     const hasAdmin = departments.some((d) => d.id === 'admin');
     if (!hasAdmin) {

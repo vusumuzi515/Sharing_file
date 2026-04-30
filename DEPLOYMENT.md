@@ -19,9 +19,9 @@ You need DNS records for:
 
 ## 2. File Server Integration
 
-Your backend supports two storage modes:
+Your backend supports direct file-server access:
 
-### Option A: Network File Share (SMB/Windows)
+### Network File Share (SMB/Windows)
 
 If your file server is a Windows share (e.g. `\\fileserver\InyatsiFiles`):
 
@@ -32,7 +32,6 @@ If your file server is a Windows share (e.g. `\\fileserver\InyatsiFiles`):
 2. **Set in backend `.env`**:
    ```
    FILE_SERVER_ROOT=/mnt/inyatsi-files
-   # Leave NEXTCLOUD_* empty to use local/network filesystem
    ```
 
 3. **Folder structure** on the file server should match departments:
@@ -42,23 +41,6 @@ If your file server is a Windows share (e.g. `\\fileserver\InyatsiFiles`):
    ├── Finance Documents/
    └── (IT Admin uses root /)
    ```
-
-### Option B: Nextcloud (WebDAV)
-
-If you use Nextcloud as the file server:
-
-1. **Set in backend `.env`**:
-   ```
-   NEXTCLOUD_URL=https://your-nextcloud.inyatsi.com/remote.php/dav/files/Inyatsi/
-   NEXTCLOUD_USERNAME=Inyatsi
-   NEXTCLOUD_PASSWORD=your-app-password
-   ```
-
-2. **Create folders** in Nextcloud matching `folderPath` in departments:
-   - `Engineering Site Reports`
-   - `Finance Documents`
-
----
 
 ## 3. Server Setup (One Linux Server Example)
 
@@ -89,14 +71,12 @@ PORT=3000
 NODE_ENV=production
 JWT_SECRET=your-strong-random-secret-min-32-chars
 
-# File server – choose one:
-# Option A: Network path
+# File server root
 FILE_SERVER_ROOT=/mnt/inyatsi-files
 
-# Option B: Nextcloud
-# NEXTCLOUD_URL=https://nextcloud.inyatsi.com/remote.php/dav/files/Inyatsi/
-# NEXTCLOUD_USERNAME=Inyatsi
-# NEXTCLOUD_PASSWORD=xxx
+# Optional Windows bridge / auth service
+# EXTERNAL_AUTH_URL=http://server-ip:5200
+# EXTERNAL_AUTH_FALLBACK_TO_LOCAL=true
 
 # Users (or sync from AD/LDAP later)
 USERS_FILE=/opt/inyatsi/backend/config/users.json
@@ -216,7 +196,7 @@ app.use(cors({
 |------|--------|
 | DNS | `api.inyatsi.com` and `admin.inyatsi.com` point to server IP |
 | SSL | Certificates installed via certbot |
-| File server | Mounted or Nextcloud configured, folders exist |
+| File server | Mounted or reachable, folders exist |
 | Users | `users.json` populated with real staff |
 | JWT_SECRET | Strong random value, never default |
 | Firewall | Ports 80, 443 open; 3000 only on localhost |

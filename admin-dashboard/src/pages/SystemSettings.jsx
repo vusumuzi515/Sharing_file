@@ -3,8 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   fetchAdminCredentials,
   updateAdminCredentials,
-  getNextcloudStatus,
-  configureNextcloud,
+  getFileServerConnectionStatus,
+  configureFileServerConnection,
   refreshDepartments,
   testFileServerConnection,
 } from '../services/monitoringApi';
@@ -23,7 +23,7 @@ export default function SystemSettings() {
   const [fsUrl, setFsUrl] = useState('');
   const [fsUser, setFsUser] = useState('');
   const [fsPass, setFsPass] = useState('');
-  const [ncStatus, setNcStatus] = useState(null);
+  const [fsStatus, setFsStatus] = useState(null);
   const [fsLoading, setFsLoading] = useState(false);
   const [fsSaving, setFsSaving] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
@@ -31,13 +31,13 @@ export default function SystemSettings() {
 
   const reloadStatus = () => {
     setFsLoading(true);
-    getNextcloudStatus()
+    getFileServerConnectionStatus()
       .then((s) => {
-        setNcStatus(s);
+        setFsStatus(s);
         if (s?.url) setFsUrl(s.url);
         if (s?.username) setFsUser(s.username);
       })
-      .catch(() => setNcStatus({ configured: false, connected: false, folders: [], url: '', username: '' }))
+      .catch(() => setFsStatus({ configured: false, connected: false, folders: [], url: '', username: '' }))
       .finally(() => setFsLoading(false));
   };
 
@@ -66,7 +66,7 @@ export default function SystemSettings() {
       setFileError('Enter server URL and server username.');
       return;
     }
-    if (!fsPass.trim() && !ncStatus?.hasActiveConnection) {
+    if (!fsPass.trim() && !fsStatus?.hasActiveConnection) {
       setFileError('Enter password, or save a connection first to reuse the stored password.');
       return;
     }
@@ -97,13 +97,13 @@ export default function SystemSettings() {
       setFileError('Server URL and server username are required.');
       return;
     }
-    if (!fsPass.trim() && !ncStatus?.hasActiveConnection) {
+    if (!fsPass.trim() && !fsStatus?.hasActiveConnection) {
       setFileError('Password is required on first setup. After that, leave blank to keep the saved password.');
       return;
     }
     setFsSaving(true);
     try {
-      await configureNextcloud({ url: fsUrl.trim(), username: fsUser.trim(), password: fsPass.trim() });
+      await configureFileServerConnection({ url: fsUrl.trim(), username: fsUser.trim(), password: fsPass.trim() });
       setFileSuccess('Saved');
       setFsPass('');
       setTestResult(null);
@@ -148,10 +148,10 @@ export default function SystemSettings() {
         <div className="border-b border-slate-100 bg-slate-50/80 px-6 py-4 sm:px-8">
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">File server</h2>
           <p className="mt-0.5 text-sm text-slate-500">Windows file server bridge</p>
-          {ncStatus?.inheritance?.usersInFileConfigNotInUsersJson?.length ? (
+          {fsStatus?.inheritance?.usersInFileConfigNotInUsersJson?.length ? (
             <p className="mt-2 text-xs text-amber-900/90">
               Add to <span className="font-mono">users.json</span> for sign-in:{' '}
-              {ncStatus?.inheritance?.usersInFileConfigNotInUsersJson?.join(', ')}
+              {fsStatus?.inheritance?.usersInFileConfigNotInUsersJson?.join(', ')}
             </p>
           ) : null}
         </div>
@@ -163,17 +163,17 @@ export default function SystemSettings() {
             {fileSuccess ? <div className="alert-success text-sm">{fileSuccess}</div> : null}
             {fileError ? <div className="alert-error text-sm">{fileError}</div> : null}
 
-            {ncStatus?.connected && !fileSuccess ? (
+            {fsStatus?.connected && !fileSuccess ? (
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-emerald-200 bg-emerald-50/95 px-3 py-2.5 text-sm text-emerald-950">
                 <span className="font-semibold">Connected</span>
                 <span className="text-emerald-900/85">
-                  {ncStatus.folders?.slice(0, 6).join(' · ') || '—'}
-                  {ncStatus.folders?.length > 6 ? '…' : ''}
+                  {fsStatus.folders?.slice(0, 6).join(' · ') || '—'}
+                  {fsStatus.folders?.length > 6 ? '…' : ''}
                 </span>
               </div>
             ) : null}
-            {ncStatus?.configured && !ncStatus?.connected && ncStatus?.error && !fileError ? (
-              <div className="alert-error text-sm">{ncStatus.error}</div>
+            {fsStatus?.configured && !fsStatus?.connected && fsStatus?.error && !fileError ? (
+              <div className="alert-error text-sm">{fsStatus.error}</div>
             ) : null}
 
             <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
@@ -183,7 +183,7 @@ export default function SystemSettings() {
                   type="text"
                   value={fsUrl}
                   onChange={(e) => setFsUrl(e.target.value)}
-                  placeholder="https://files.company.com"
+                  placeholder="http://server-ip:5200"
                   className="input mt-2 w-full max-w-xl"
                   autoComplete="url"
                 />
@@ -204,7 +204,7 @@ export default function SystemSettings() {
                   type="password"
                   value={fsPass}
                   onChange={(e) => setFsPass(e.target.value)}
-                  placeholder={ncStatus?.hasActiveConnection ? 'Leave blank to keep saved' : 'Bridge password'}
+                  placeholder={fsStatus?.hasActiveConnection ? 'Leave blank to keep saved' : 'Bridge password'}
                   className="input mt-2 max-w-xl"
                   autoComplete="new-password"
                 />

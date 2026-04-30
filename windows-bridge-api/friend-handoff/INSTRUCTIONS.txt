@@ -1,0 +1,43 @@
+INSTRUCTIONS — Copy Program.cs to the friend’s Windows laptop
+===============================================================
+
+!! If the current project is a “simple file server” (e.g. /api/health, /api/files with
+   a "path" query, /api/files/download, upload/delete) and NOT the Inyatsi bridge, it
+   will NOT work with the Node backend. The portal calls /api/departments,
+   /api/auth/login, /api/test-root, and /api/files?department=…&username=… (Windows
+   users + NTFS). You must use THIS repo’s Program.cs + the matching .csproj
+   (net8.0-windows, Directory Services package). You cannot “merge” the two: replace
+   the small template entirely.
+
+1. In your bridge project (same folder that contains the old Program.cs), REPLACE the
+   existing file with this one:
+
+   - Copy:  friend-handoff\Program.cs
+   - Paste over:  <ProjectFolder>\Program.cs
+     (or merge if your friend has local edits — prefer replacing entirely if in doubt)
+
+2. Do NOT run from this folder by itself. The project still needs:
+   - windows-bridge-api.csproj
+   - appsettings.json / appsettings.Development.json  (FileServer:RootPath for their PC)
+   - Properties\launchSettings.json
+
+3. From the project root (where the .csproj is), run:
+     dotnet run --launch-profile http
+
+   The console should show listening on **http://0.0.0.0:5200** in Development.
+
+4. In the browser on that PC, test:
+     http://localhost:5200/
+     → should show: inyatsi-windows-bridge-api OK
+
+     http://localhost:5200/api/test-root
+     → JSON with rootPath and exists
+
+5. Then run ngrok on the same port:
+     ngrok http 5200
+
+6. Best long-term: pull the same commit from your Git repository instead of copying this
+   file, so the friend always matches your repo.
+
+Questions: compare line count / top lines with your repo’s Program.cs after copy — if your
+template was different, keep your .csproj and only replace Program.cs.

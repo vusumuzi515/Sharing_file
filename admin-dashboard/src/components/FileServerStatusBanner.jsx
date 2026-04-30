@@ -31,7 +31,7 @@ export default function FileServerStatusBanner() {
   if (!isLoading && !isError && data) {
     const storageParts = [];
     if (w?.connected) {
-      const host = w.url || w.endpoint || 'WebDAV';
+      const host = w.url || w.endpoint || 'File server';
       storageParts.push(
         isAdmin
           ? `Files · ${host} · ${n} folder${n === 1 ? '' : 's'}`
@@ -47,13 +47,18 @@ export default function FileServerStatusBanner() {
     }
 
     if (ra?.configured) {
-      if (ra.reachable && (ra.service || ra.statusText)) {
+      if (ra.reachable) {
+        const detail =
+          ra.service ||
+          ra.statusText ||
+          (ra.probe === '/api/test-root' && ra.exists === true
+            ? 'departments root OK'
+            : ra.probe || 'reachable');
         storageParts.push(
-          `Remote login API · ${ra.service || ra.statusText || 'ok'}${isAdmin && data?.remoteAuthUrl ? ` · ${data.remoteAuthUrl}` : ra.host ? ` · ${ra.host}` : ''}`,
+          `Remote bridge · ${detail}${isAdmin && data?.remoteAuthUrl ? ` · ${data.remoteAuthUrl}` : ra.host ? ` · ${ra.host}` : ''}`,
         );
-      } else if (ra.reachable) {
-        storageParts.push('Remote login API · reachable');
-      } else {
+        if (tone.includes('amber') && !w?.configured) tone = 'border-emerald-200 bg-emerald-50 text-emerald-900';
+      } else if (!ra.reachable) {
         const errRaw = ra.error ? String(ra.error) : '';
         const errShort =
           /fetch failed/i.test(errRaw) && !/Details:/i.test(errRaw)

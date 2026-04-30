@@ -101,7 +101,7 @@ export default function LoginScreen() {
               <TextInput
                 value={employeeId}
                 onChangeText={setEmployeeId}
-                placeholder="Employee ID / Nextcloud username"
+                placeholder="Employee ID / server username"
                 autoCapitalize="none"
                 style={styles.input}
               />

@@ -158,28 +158,14 @@ static bool CanUserAccessDepartment(string? username, string departmentName, out
     return userGroups.Contains(expectedGroup);
 }
 
-static bool ValidateLocalCredentials(string username, string password, IConfiguration? config = null)
+static bool ValidateLocalCredentials(string username, string password)
 {
     var normalized = NormalizeUsername(username);
     if (string.IsNullOrWhiteSpace(normalized) || string.IsNullOrWhiteSpace(password)) return false;
-    var domain = config?["Auth:Domain"]?.Trim();
     try
     {
-        // Active Directory (optional): set "Auth:Domain" to the NetBIOS or DNS domain name, e.g. COMPANY
-        if (!string.IsNullOrWhiteSpace(domain))
-        {
-            using var domainCtx = new PrincipalContext(ContextType.Domain, domain);
-            if (domainCtx.ValidateCredentials(normalized, password, ContextOptions.Negotiate)) return true;
-        }
-    }
-    catch
-    {
-        /* fall through to local SAM */
-    }
-    try
-    {
-        using var machine = new PrincipalContext(ContextType.Machine);
-        return machine.ValidateCredentials(normalized, password, ContextOptions.Negotiate);
+        using var context = new PrincipalContext(ContextType.Machine);
+        return context.ValidateCredentials(normalized, password, ContextOptions.Negotiate);
     }
     catch
     {
@@ -255,7 +241,7 @@ app.MapPost("/api/auth/login", (WindowsLoginRequest request, IConfiguration conf
         return Results.BadRequest(new { error = "username and password are required." });
     }
 
-    if (!ValidateLocalCredentials(username, password, config))
+    if (!ValidateLocalCredentials(username, password))
     {
         return Results.Unauthorized();
     }

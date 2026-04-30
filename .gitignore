@@ -26,7 +26,7 @@ yarn-error.*
 !**/.env.example
 !**/.env.production.example
 
-# Nextcloud config (contains credentials)
+# file-server connection config (contains credentials)
 backend/config/nextcloud-config.json
 backend/config/users.json
 

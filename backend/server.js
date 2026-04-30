@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { readFileSync, existsSync } from 'fs';
 import cors from 'cors';
 import express from 'express';
@@ -15,6 +15,7 @@ import { NYATSI_DEPARTMENTS_LIST } from './config/departments.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
@@ -31,7 +32,7 @@ const REMOTE_DEPARTMENTS_PATHS = String(
   .filter(Boolean);
 const REMOTE_FILES_PATHS = String(
   process.env.REMOTE_FILES_PATHS ||
-    '/api/external/dashboard/files?orgId={orgId}&username={username},/api/external/dashboard/departments/{orgId}/files?username={username},/api/files',
+    '/api/files?department={orgId},/api/files?department={orgId}&username={username},/api/external/dashboard/files?orgId={orgId}&username={username},/api/external/dashboard/departments/{orgId}/files?username={username},/api/files',
 )
   .split(',')
   .map((s) => s.trim())
@@ -40,6 +41,13 @@ const REMOTE_FILES_PATHS = String(
 const REMOTE_X_ORG_ID = String(process.env.REMOTE_X_ORG_ID || '').trim();
 /** inyatsi-secure-access-api requires this on GET /api/departments and related routes. */
 const REMOTE_X_DEVICE_ID = String(process.env.REMOTE_X_DEVICE_ID || 'inyatsi-portal-web').trim();
+/**
+ * If true, GET /api/departments and merged file ACL use only departments from EXTERNAL_AUTH_URL
+ * (e.g. friend’s Windows bridge), not local/WebDAV/inyatsi-config.
+ */
+const REMOTE_DEPARTMENTS_ONLY = ['1', 'true', 'yes'].includes(
+  String(process.env.REMOTE_DEPARTMENTS_ONLY || '').trim().toLowerCase(),
+);
 /** ngrok free: bypass interstitial; use `1` or `69420` per tunnel docs. */
 const NGROK_SKIP_BROWSER_WARNING = String(process.env.NGROK_SKIP_BROWSER_WARNING ?? '1').trim();
 /**
@@ -104,9 +112,10 @@ function hasSavedNextcloudFileConfig() {
 }
 
 /** Optional: validate credentials against external file server /api/auth/login (e.g. loca.lt tunnel). */
-async function verifyExternalAuth(employeeId, password) {
+async function verifyExternalAuth(employeeId, password, departmentId = '') {
   if (!EXTERNAL_AUTH_URL) return null;
   const url = `${EXTERNAL_AUTH_URL}/api/auth/login`;
+  const dept = String(departmentId || '').trim().toLowerCase();
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -114,7 +123,12 @@ async function verifyExternalAuth(employeeId, password) {
         'Content-Type': 'application/json',
         ...remoteApiHeaders(),
       },
-      body: JSON.stringify({ username: employeeId, employeeId, password }),
+      body: JSON.stringify({
+        username: employeeId,
+        employeeId,
+        password,
+        ...(dept ? { departmentId: dept } : {}),
+      }),
       signal: AbortSignal.timeout(15000),
     });
     const data = await res.json().catch(() => ({}));
@@ -203,11 +217,28 @@ function getEffectiveRemoteBearer(req) {
   return t || null;
 }
 
+/** Portal JWT on GET /api/departments is not on req.user (no auth middleware); decode from Authorization. */
+function getPortalUserFromRequest(req) {
+  if (req?.user) return req.user;
+  const auth = String(req?.headers?.authorization || '');
+  const token = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+  if (!token) return null;
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
 /** Merge remote GET /api/departments with dynamic config so file routes see file-server department ACL. */
 async function mergeRemoteDepartmentsIntoConfig(config, req) {
-  let departments = [...(config.departments || [])];
+  let departments = REMOTE_DEPARTMENTS_ONLY ? [] : [...(config.departments || [])];
+  const portalUser = getPortalUserFromRequest(req);
   if (EXTERNAL_AUTH_URL && REMOTE_API_BEARER_TOKEN) {
-    departments = mergeDepartmentLists(departments, await fetchRemoteDepartments(REMOTE_API_BEARER_TOKEN, req?.user));
+    departments = mergeDepartmentLists(
+      departments,
+      await fetchRemoteDepartments(REMOTE_API_BEARER_TOKEN, portalUser),
+    );
   }
   const authHeader =
     req?.headers?.authorization?.replace(/^Bearer /i, '') || String(req?.query?.token || '').trim();
@@ -216,7 +247,10 @@ async function mergeRemoteDepartmentsIntoConfig(config, req) {
       const payload = jwt.verify(authHeader, JWT_SECRET);
       const remoteAccess = payload.remoteAccessToken;
       if (remoteAccess) {
-        departments = mergeDepartmentLists(departments, await fetchRemoteDepartments(remoteAccess, req?.user));
+        departments = mergeDepartmentLists(
+          departments,
+          await fetchRemoteDepartments(remoteAccess, portalUser),
+        );
       }
     } catch {
       /* invalid or missing token */
@@ -237,7 +271,9 @@ async function fetchRemoteFilesForOrgUncached(bearerToken, orgId, reqUser = null
   for (const p of pathsToTry) {
     const usernameList = p.includes('{username}') ? (usernames.length ? usernames : [null]) : [null];
     for (const username of usernameList) {
-      if (p.includes('{username}') && !username) continue;
+      /* Do not skip when username is null/empty: Windows bridge lists by department and treats
+       * missing user as full folder read; skipping would return no files when REMOTE_FILES_PATHS
+       * only includes `?username={username}` and JWT has no username claim. */
     try {
       const headers = {
         ...remoteApiHeaders(),
@@ -287,7 +323,12 @@ async function fetchRemoteFileDownloadStream(bearerToken, orgId, serverFileId) {
     Authorization: `Bearer ${bearerToken}`,
     'x-org-id': String(orgId),
   };
-  const id = encodeURIComponent(String(serverFileId));
+  // Keep path separators for catch-all routes like /api/files/content/{*fileId}.
+  // Encoding the whole string turns "/" into "%2F", which bridge routing treats as a literal.
+  const id = String(serverFileId)
+    .split('/')
+    .map((part) => encodeURIComponent(part))
+    .join('/');
   const urls = [
     `${base}/api/files/download/${id}`,
     `${base}/api/files/content/${id}`,
@@ -419,8 +460,8 @@ function findRemoteFileRow(remoteRows, fileName, project) {
 
 /**
  * Attach file-server ACL to listed files (name match within org).
- * When the file row has access.canEdit === true, that wins over portal/department "view" in users.json
- * (Finance etc. follow Nextcloud / external file server rights).
+ * When `trustFileServerAcl()` and the secure API / bridge returns a row for the file, permissions come
+ * only from the file server (not portal department view-only in users.json).
  */
 function enrichFilesWithRemoteAccess(files, department, remoteRows, { req, deptHasAccess }) {
   const portalViewOnly = !canSessionEditDepartment(req, department);
@@ -434,15 +475,29 @@ function enrichFilesWithRemoteAccess(files, department, remoteRows, { req, deptH
       access && Object.prototype.hasOwnProperty.call(access, 'canDownload')
         ? access.canDownload === true
         : serverCanView;
+    if (trustFileServerAcl() && row) {
+      let permission = 'edit';
+      if (!serverCanView) permission = 'none';
+      else if (!serverCanEdit) permission = 'view';
+      const has_access = serverCanView && deptHasAccess;
+      return {
+        ...f,
+        ...(row?.id ? { serverFileId: row.id } : {}),
+        ...(access ? { serverAccess: access } : {}),
+        permission,
+        has_access,
+        can_edit: serverCanEdit && has_access,
+        can_view: serverCanView,
+        can_download: serverCanDownload && has_access,
+      };
+    }
     let permission = 'edit';
     if (!serverCanView) permission = 'none';
     else if (!serverCanEdit) permission = 'view';
     const has_access = serverCanView && deptHasAccess;
     const explicitServerEdit = Boolean(access && access.canEdit === true);
-    /** Listed on remote API without nested access — treat as NC/file-server scoped listing (Finance, etc.). */
     const remoteListingUnlocksCoarseView =
       trustFileServerAcl() && Boolean(row) && !access && serverCanView && serverCanEdit;
-    /** WebDAV-backed listing (Nextcloud): no per-row match but mount is already ACL-scoped by the server. */
     const webdavListingUnlocksCoarseView =
       Boolean(getWebdavClient()) &&
       (portalViewOnly || deptViewOnly) &&
@@ -1302,7 +1357,6 @@ async function assertProjectUploadAllowed(req, department, project) {
   if (!trustFileServerAcl()) return { ok: true };
   const userDeptId = String(req.user?.departmentId || '').trim().toLowerCase();
   const deptHasAccess = isAdminUser(req) || canUserAccessDepartment(userDeptId, department);
-  const deptPerm = isDepartmentViewOnly(department) ? 'view' : 'edit';
   const portalViewOnly = !canSessionEditDepartment(req, department);
   const restricted = RESTRICTED_PROJECTS.has(String(project || '').toLowerCase());
   const bearer = getEffectiveRemoteBearer(req);
@@ -1314,8 +1368,19 @@ async function assertProjectUploadAllowed(req, department, project) {
       remoteRows = [];
     }
   }
+  const inheritFromFileServer = trustFileServerAcl() && remoteRows.length > 0;
+  const deptPerm = inheritFromFileServer
+    ? 'edit'
+    : isDepartmentViewOnly(department)
+      ? 'view'
+      : 'edit';
   const folderPermission = folderPermissionFromRemote(project, remoteRows, deptPerm);
   const folderCanEdit = folderPermission === 'edit' && !restricted;
+  if (inheritFromFileServer) {
+    return deptHasAccess && folderCanEdit
+      ? { ok: true }
+      : { ok: false, reason: 'Upload is not allowed in this folder.' };
+  }
   const canEdit = folderRowCanEditForUser(
     deptHasAccess,
     folderCanEdit,
@@ -1756,16 +1821,16 @@ app.get('/api/nextcloud/test', async (_req, res) => {
   if (!client) {
     return res.status(503).json({
       ok: false,
-      error: 'File server (WebDAV) not configured. Use System Settings → File server connection, or set NEXTCLOUD_* in .env',
+      error: 'File server connection is not configured. Use System Settings to save the server connection.',
     });
   }
   try {
     await client.getDirectoryContents('/');
-    return res.json({ ok: true, message: 'Connected to file server (WebDAV)' });
+    return res.json({ ok: true, message: 'Connected to file server' });
   } catch (err) {
     return res.status(502).json({
       ok: false,
-      error: err?.message || 'WebDAV connection failed',
+      error: err?.message || 'File server connection failed',
     });
   }
 });
@@ -1793,7 +1858,7 @@ app.get('/api/nextcloud/status', authRequired, async (req, res) => {
       username: cfg.username || '',
       error: configured
         ? 'Cannot connect — check URL, username, and password'
-        : 'Enter server URL, username, and password below (or set NEXTCLOUD_* in backend .env)',
+        : 'Enter server URL, username, and password below.',
       inheritance,
       ...setupInfo,
     });
@@ -1862,7 +1927,7 @@ app.post('/api/nextcloud/configure', authRequired, async (req, res) => {
   });
 });
 
-/** Test WebDAV without saving (for live demos). */
+/** Test file-server connection without saving (for live demos). */
 app.post('/api/file-server/test', authRequired, async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ error: 'Admin access required' });
   const urlInput = String(req.body?.url || '').trim();
@@ -2107,7 +2172,7 @@ app.post('/api/login', async (req, res) => {
 
   let ext = null;
   if (EXTERNAL_AUTH_URL) {
-    ext = await verifyExternalAuth(employeeId, password);
+    ext = await verifyExternalAuth(employeeId, password, selectedDepartmentId);
     if (ext?.ok && ext.remoteAccessToken) {
       const r = await fetchRemoteDepartments(ext.remoteAccessToken, ext?.user || { username: employeeId, employeeId });
       departments = mergeDepartmentLists(departments, r);
@@ -2317,6 +2382,7 @@ function buildUsersGroupedByDepartment(normalized) {
 
 app.get('/api/departments', async (req, res) => {
   const forceRefresh = req.query?.refresh === '1';
+  if (forceRefresh) clearRemoteDepartmentCaches();
   const config = await getDynamicConfig(forceRefresh);
   const { departments } = await mergeRemoteDepartmentsIntoConfig(config, req);
 
@@ -2364,9 +2430,16 @@ app.get('/api/departments', async (req, res) => {
           .sort((a, b) => a.localeCompare(b))
           .map((n) => ({ id: n, name: n }));
       }
+      const inheritFromFileServer = trustFileServerAcl() && remoteRows.length > 0;
+      const deptPermForFolders = inheritFromFileServer
+        ? 'edit'
+        : isDepartmentViewOnly(d)
+          ? 'view'
+          : 'edit';
+      const effectivePortalViewOnly = inheritFromFileServer ? false : portalViewOnly;
       const folders = rawFolders.map((f) => {
         const restricted = RESTRICTED_PROJECTS.has((f.name || '').toLowerCase());
-        const fp = folderPermissionFromRemote(f.name, remoteRows, deptPerm);
+        const fp = folderPermissionFromRemote(f.name, remoteRows, deptPermForFolders);
         const folderCanEdit = fp === 'edit' && !restricted;
         return {
           id: f.id,
@@ -2376,8 +2449,8 @@ app.get('/api/departments', async (req, res) => {
           can_edit: folderRowCanEditForUser(
             deptHasAccess,
             folderCanEdit,
-            portalViewOnly,
-            deptPerm,
+            effectivePortalViewOnly,
+            deptPermForFolders,
             fp,
             isAdmin,
             restricted,
@@ -2526,7 +2599,6 @@ app.get('/api/projects', authRequired, async (req, res) => {
   const department = await getDepartmentContext(req);
   const userDeptId = String(req.user?.departmentId || '').trim().toLowerCase();
   const deptHasAccess = isAdminUser(req) || canUserAccessDepartment(userDeptId, department);
-  const deptPerm = isDepartmentViewOnly(department) ? 'view' : 'edit';
   const portalViewOnly = !canSessionEditDepartment(req, department);
   const bearer = getEffectiveRemoteBearer(req);
   let remoteRows = [];
@@ -2548,9 +2620,17 @@ app.get('/api/projects', authRequired, async (req, res) => {
       .sort((a, b) => a.localeCompare(b))
       .map((n) => ({ id: n, name: n }));
   }
+  /** When the bridge returns file rows, subfolder edit/view and upload follow NTFS/bridge only. */
+  const inheritFromFileServer = trustFileServerAcl() && remoteRows.length > 0;
+  const deptPermForFolders = inheritFromFileServer
+    ? 'edit'
+    : isDepartmentViewOnly(department)
+      ? 'view'
+      : 'edit';
+  const effectivePortalViewOnly = inheritFromFileServer ? false : portalViewOnly;
   const projects = raw.map((p) => {
     const restricted = RESTRICTED_PROJECTS.has((p.name || '').toLowerCase());
-    const fp = folderPermissionFromRemote(p.name, remoteRows, deptPerm);
+    const fp = folderPermissionFromRemote(p.name, remoteRows, deptPermForFolders);
     const folderCanEdit = fp === 'edit' && !restricted;
     return {
       id: p.id,
@@ -2561,8 +2641,8 @@ app.get('/api/projects', authRequired, async (req, res) => {
       can_edit: folderRowCanEditForUser(
         deptHasAccess,
         folderCanEdit,
-        portalViewOnly,
-        deptPerm,
+        effectivePortalViewOnly,
+        deptPermForFolders,
         fp,
         isAdminUser(req),
         restricted,
@@ -3075,8 +3155,7 @@ app.get('/api/me/session', authRequired, async (req, res) => {
     isAdmin: isAdminUser(req),
     capabilities: caps,
     portalPolicy,
-    policy:
-      'Permissions follow users.json and JWT; with NEXTCLOUD_PORTAL_AUTH=groups, login uses Nextcloud WebDAV and group membership. File operations use the Nextcloud service account.',
+    policy: 'Permissions follow users.json, JWT, and the connected file server or bridge.',
   });
 });
 

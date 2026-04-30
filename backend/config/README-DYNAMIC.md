@@ -56,7 +56,7 @@ Place at file server root (same level as department folders).
 
 ### Adding a new department (e.g. Lidwala)
 
-1. Create the folder on the file server (Nextcloud or local) – e.g. `Lidwala`
+1. Create the folder on the file server – e.g. `Lidwala`
 2. **If it doesn’t appear**, add it to `inyatsi-config.json` at the file server root:
 
 ```json
@@ -67,6 +67,6 @@ Place at file server root (same level as department folders).
 }
 ```
 
-3. For Nextcloud: upload `inyatsi-config.json` to the root of the WebDAV storage (same level as other department folders)
+3. Put `inyatsi-config.json` at the root of the connected file server (same level as other department folders)
 4. Copy `users.example.json` to `users.json`, then add your real users with `departmentId: "lidwala"`
 5. Click "Refresh from file server" in the admin Departments page

@@ -13,4 +13,9 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
+  <!-- Reference copy under friend-handoff/ is not part of the runnable API; compiling it duplicates Program.cs. -->
+  <ItemGroup>
+    <Compile Remove="friend-handoff\**\*.cs" />
+  </ItemGroup>
+
 </Project>

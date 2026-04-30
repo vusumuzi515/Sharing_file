@@ -39,6 +39,8 @@ function formatDate(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** File-server departments (picker lists all loaded departments; optional search narrows). */
+
 function getFileIcon(fileType) {
   const t = String(fileType || '').toLowerCase();
   if (t === 'pdf') return '📄';
@@ -47,11 +49,10 @@ function getFileIcon(fileType) {
   return '📎';
 }
 
-/** Show matches only after this many typed chars (between 2–4 keeps suggestions focused). Not shown in the UI. */
-const DEPT_SEARCH_MIN_CHARS = 3;
 
 export default function SiteFiles() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuthSync();
   const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef(null);
   const deptSearchInputRef = useRef(null);
@@ -64,6 +65,9 @@ export default function SiteFiles() {
   const [search, setSearch] = useState('');
   const [deptPickerQuery, setDeptPickerQuery] = useState('');
   const [publicDepartments, setPublicDepartments] = useState([]);
+  const [publicDeptError, setPublicDeptError] = useState('');
+  /** Avoid flashing "No departments" while the public (no-auth) list is still loading. */
+  const [publicDeptsLoading, setPublicDeptsLoading] = useState(() => !isAuthenticated);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [authDepartmentId, setAuthDepartmentId] = useState('');
   const [authUsername, setAuthUsername] = useState('');
@@ -73,7 +77,6 @@ export default function SiteFiles() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { setDepartment, clearDepartment } = useDepartment();
-  const { isAuthenticated } = useAuthSync();
 
   const selectedDept = searchParams.get('department') || '';
   const selectedProject = searchParams.get('project') || '';
@@ -93,8 +96,12 @@ export default function SiteFiles() {
   useEffect(() => {
     if (isAuthenticated) {
       setPublicDepartments([]);
+      setPublicDeptsLoading(false);
+      setPublicDeptError('');
       return;
     }
+    setPublicDeptsLoading(true);
+    setPublicDeptError('');
     fetchDepartmentsPublic()
       .then((items) => {
         const mapped = (items || []).map((item) => ({
@@ -104,14 +111,21 @@ export default function SiteFiles() {
         }));
         setPublicDepartments(mapped);
       })
-      .catch(() => setPublicDepartments([]));
+      .catch((e) => {
+        setPublicDepartments([]);
+        setPublicDeptError(e?.message || 'Could not load departments');
+      })
+      .finally(() => setPublicDeptsLoading(false));
   }, [isAuthenticated]);
+
+  const deptListLoading = isAuthenticated ? deptsLoading : publicDeptsLoading;
 
   const departmentsWithAccess = isAuthenticated ? departments : publicDepartments;
 
+  /** Filter picker list (optional search); show full list when search box is empty so departments appear immediately after load. */
   const filteredDepartments = useMemo(() => {
     const q = deptPickerQuery.trim().toLowerCase();
-    if (q.length < DEPT_SEARCH_MIN_CHARS) return [];
+    if (!q) return departmentsWithAccess;
     return departmentsWithAccess.filter((dept) => {
       const label = normalizeDepartmentLabel(dept.label, dept.id).toLowerCase();
       const id = String(dept.id || '').toLowerCase();
@@ -119,9 +133,8 @@ export default function SiteFiles() {
     });
   }, [departmentsWithAccess, deptPickerQuery]);
 
-  const deptQueryReady = deptPickerQuery.trim().length >= DEPT_SEARCH_MIN_CHARS;
-
   const openDepartmentPicker = () => {
+    setDeptPickerQuery('');
     setDeptPickerOpen(true);
     queueMicrotask(() => deptSearchInputRef.current?.focus());
   };
@@ -129,7 +142,10 @@ export default function SiteFiles() {
   useEffect(() => {
     if (!deptPickerOpen) return;
     const onKey = (e) => {
-      if (e.key === 'Escape') setDeptPickerOpen(false);
+      if (e.key === 'Escape') {
+        setDeptPickerQuery('');
+        setDeptPickerOpen(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -171,7 +187,7 @@ export default function SiteFiles() {
   const selectedDeptData = departmentsWithAccess.find((d) => d.id === selectedDept);
   const deptHasAccess =
     Boolean(selectedDept) &&
-    (isAuthenticated && deptsLoading
+    (deptListLoading
       ? true
       : selectedDeptData != null && selectedDeptData.has_access !== false);
 
@@ -244,7 +260,6 @@ export default function SiteFiles() {
     [visibleProjects],
   );
   const canUpload = uploadableProjects.length > 0;
-  const hasFileResults = files.length > 0;
 
   const handleRefresh = async () => {
     try {
@@ -527,11 +542,11 @@ export default function SiteFiles() {
             <button
               type="button"
               onClick={openDepartmentPicker}
-              disabled={deptsLoading && departmentsWithAccess.length === 0}
+              disabled={deptListLoading && departmentsWithAccess.length === 0}
               className="inline-flex min-h-[48px] items-center gap-2.5 rounded-full bg-[#0e5b45] px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-950/15 transition hover:bg-[#0b4737] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0e5b45] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
             >
               <IconSearch className="h-5 w-5 opacity-95" aria-hidden />
-              {deptsLoading && departmentsWithAccess.length === 0 ? 'Loading…' : 'Find department'}
+              {deptListLoading && departmentsWithAccess.length === 0 ? 'Loading…' : 'Find department'}
             </button>
           ) : null}
         </div>
@@ -543,7 +558,10 @@ export default function SiteFiles() {
             type="button"
             aria-label="Close"
             className="fixed inset-x-0 bottom-0 top-[6.25rem] z-[35] cursor-default bg-transparent lg:top-[7rem]"
-            onClick={() => setDeptPickerOpen(false)}
+            onClick={() => {
+              setDeptPickerQuery('');
+              setDeptPickerOpen(false);
+            }}
           />
           <div
             className="fixed left-1/2 top-[max(6.5rem,env(safe-area-inset-top,0px)+5rem)] z-[45] w-[min(calc(100vw-1.5rem),22rem)] -translate-x-1/2 rounded-2xl border border-slate-200/70 bg-white/92 p-3 shadow-2xl shadow-slate-900/10 backdrop-blur-xl lg:top-[max(7.5rem,env(safe-area-inset-top,0px)+5.5rem)]"
@@ -558,21 +576,23 @@ export default function SiteFiles() {
                 type="search"
                 enterKeyHint="search"
                 autoComplete="off"
-                placeholder="Search department"
+                placeholder="Search departments"
                 value={deptPickerQuery}
                 onChange={(e) => setDeptPickerQuery(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white/80 py-2.5 pl-9 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#0e5b45]/40 focus:outline-none focus:ring-2 focus:ring-[#0e5b45]/25"
               />
             </div>
             <div className="mt-2 max-h-[min(50vh,18rem)] overflow-y-auto overscroll-contain rounded-xl border border-slate-100 bg-slate-50/80">
-              {!deptQueryReady ? (
-                <div className="min-h-[7.5rem] rounded-lg bg-slate-50/30" aria-hidden />
-              ) : deptsLoading ? (
+              {deptListLoading ? (
                 <div className="p-2">
                   <FileListSkeleton rows={4} />
                 </div>
+              ) : publicDeptError ? (
+                <p className="px-3 py-4 text-center text-xs leading-relaxed text-amber-800">{publicDeptError}</p>
               ) : departmentsWithAccess.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-slate-500">No departments.</p>
+                <p className="px-3 py-6 text-center text-sm text-slate-500">
+                  No departments. Check Node can reach EXTERNAL_AUTH_URL (ngrok + Windows bridge running).
+                </p>
               ) : (
                 <ul className="p-1.5" role="listbox" aria-label="Departments">
                   {filteredDepartments.length === 0 ? (
@@ -615,12 +635,18 @@ export default function SiteFiles() {
         </>
       ) : null}
 
-      {/* Files list */}
-      {selectedDept && deptHasAccess && (filesLoading || hasFileResults) ? (
+      {/* Files list: always show when in a department so empty / loading states are visible */}
+      {selectedDept && deptHasAccess ? (
         <section className="space-y-3 transition-opacity duration-200">
           <h3 className="text-base font-semibold text-slate-800">Files</h3>
           {filesLoading && !files.length ? (
             <FileListSkeleton rows={5} />
+          ) : !files.length ? (
+            <p className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-10 text-center text-sm text-slate-600">
+              {normalizedSearch
+                ? 'No files match your search.'
+                : 'No files in this view. If you expect files from the file server, use Refresh — they appear when the server allows your account to read this department.'}
+            </p>
           ) : (
             <div className="card overflow-hidden rounded-2xl">
               {/* Mobile (<640px): card layout */}

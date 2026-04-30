@@ -1,4 +1,11 @@
-const BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:3000';
+/**
+ * Node portal API base. Empty = same origin as the admin app (recommended in dev: Vite proxies
+ * `/api` → http://localhost:3000 per vite.config.js). Set `VITE_BACKEND_API_URL` only when the API
+ * is on another host (production or remote Node). Do not use the Windows bridge port (5200) here.
+ */
+const BASE_URL = String(import.meta.env.VITE_BACKEND_API_URL ?? '')
+  .trim()
+  .replace(/\/+$/, '');
 const DEPARTMENTS_API_URL = import.meta.env.VITE_DEPARTMENTS_API_URL || '';
 const DEPARTMENTS_API_KEY = import.meta.env.VITE_DEPARTMENTS_API_KEY || '';
 /** Sent to Node portal API for audit logs (upload / visit / delete source). */
@@ -6,13 +13,25 @@ const PORTAL_CLIENT_HEADER = { 'X-Portal-Client': 'inyatsi-web' };
 const USER_KEY = 'inyatsi-auth-user';
 const AUTH_CHANGED = 'inyatsi-auth-changed';
 
+/**
+ * ngrok free tier returns an interstitial for browser requests without this header, which breaks
+ * JSON and auth. Set VITE_NGROK_SKIP_BROWSER_WARNING=0 to disable. Value forwarded by Node to
+ * EXTERNAL_AUTH_URL — keep backend NGROK_SKIP_BROWSER_WARNING in sync when using a tunnel.
+ * @see https://ngrok.com/docs/http/request-headers#skip-browser-warning
+ */
+function getNgrokHeaders() {
+  const v = import.meta.env.VITE_NGROK_SKIP_BROWSER_WARNING;
+  if (v === '0' || String(v).toLowerCase() === 'false') return {};
+  return { 'ngrok-skip-browser-warning': String(v || '1') };
+}
+
 function departmentsAuthHeaders(token) {
   return {
+    ...getNgrokHeaders(),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(DEPARTMENTS_API_KEY
       ? { 'x-api-key': DEPARTMENTS_API_KEY, 'x-external-dashboard-key': DEPARTMENTS_API_KEY }
       : {}),
-    'ngrok-skip-browser-warning': '1',
   };
 }
 
@@ -175,7 +194,10 @@ export async function checkSetupStatus() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const res = await fetch(`${BASE_URL}/api/admin/setup-status`, { signal: controller.signal });
+    const res = await fetch(`${BASE_URL}/api/admin/setup-status`, {
+      signal: controller.signal,
+      headers: { ...getNgrokHeaders() },
+    });
     clearTimeout(timeout);
     const data = await res.json().catch(() => ({}));
     return data?.configured ?? false;
@@ -189,7 +211,7 @@ export async function checkSetupStatus() {
 export async function setupAdmin({ email, username, password }) {
   const res = await fetch(`${BASE_URL}/api/admin/setup`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getNgrokHeaders() },
     body: JSON.stringify({ email, username, password }),
   });
   if (!res.ok) {
@@ -201,19 +223,32 @@ export async function setupAdmin({ email, username, password }) {
 
 /** Fetch departments (public, no auth) - for login page department selector. Uses Node API only. */
 export async function fetchDepartmentsPublic() {
-  const res = await fetch(`${BASE_URL}/api/departments`);
-  if (!res.ok) throw new Error('Could not load departments');
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/api/departments`, { headers: { ...getNgrokHeaders() } });
+  } catch (e) {
+    throw new Error(
+      `Could not reach portal API (${e?.message || 'network error'}). Confirm the dev server proxies to Node on port 3000 or set VITE_BACKEND_API_URL.`,
+    );
+  }
+  if (!res.ok) {
+    const hint =
+      res.status === 503 || res.status === 502
+        ? 'File server tunnel offline (503/502). On the PC with the bridge: run ngrok http 5200 and dotnet windows-bridge-api; copy the new https URL into backend EXTERNAL_AUTH_URL and restart Node.'
+        : `HTTP ${res.status}`;
+    throw new Error(`Could not load departments: ${hint}`);
+  }
   const data = await res.json();
   return data?.departments ?? [];
 }
 
-/** Login with file server credentials - validates against Nextcloud/users.json */
+/** Login with file server credentials. */
 export async function loginDashboard({ username, password, departmentId }) {
   const deptId = String(departmentId || '').trim().toLowerCase();
   if (!deptId) throw new Error('Select your department');
   const res = await fetch(`${BASE_URL}/api/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getNgrokHeaders() },
     body: JSON.stringify({
       employeeId: username,
       password,
@@ -222,8 +257,10 @@ export async function loginDashboard({ username, password, departmentId }) {
     }),
   });
   if (!res.ok) {
-    await res.json().catch(() => ({}));
-    throw new Error('Sign-in failed. Check your username, password, and department, then try again.');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      err?.error || 'Sign-in failed. Check your username, password, and department, then try again.',
+    );
   }
   const data = await res.json();
   setToken(data.token);
@@ -237,6 +274,7 @@ export async function updateAdminCredentials({ email, username, password }) {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
+      ...getNgrokHeaders(),
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ email, username, password }),
@@ -251,7 +289,7 @@ export async function updateAdminCredentials({ email, username, password }) {
 export async function fetchAdminCredentials() {
   const token = getToken();
   const res = await fetch(`${BASE_URL}/api/admin/credentials`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { ...getNgrokHeaders(), Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Could not load credentials');
   return res.json();
@@ -265,6 +303,7 @@ async function request(path, opts = {}) {
     ...rest,
     method: opts.method || 'GET',
     headers: {
+      ...getNgrokHeaders(),
       ...PORTAL_CLIENT_HEADER,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(optHeaders || {}),
@@ -362,22 +401,23 @@ export async function refreshFilesFromServerCache() {
   return request('/api/files/refresh-cache', { method: 'POST' });
 }
 
-export async function getNextcloudStatus() {
+export async function getFileServerConnectionStatus() {
   return request('/api/nextcloud/status');
 }
 
-export async function testNextcloudConnection() {
-  const res = await fetch(`${BASE_URL}/api/nextcloud/test`);
+export async function testStoredFileServerConnection() {
+  const res = await fetch(`${BASE_URL}/api/nextcloud/test`, { headers: { ...getNgrokHeaders() } });
   return res.json();
 }
 
-/** Save WebDAV connection. Password optional if already stored (reuse). */
-export async function configureNextcloud({ url, username, password }) {
+/** Save file-server connection. Password optional if already stored (reuse). */
+export async function configureFileServerConnection({ url, username, password }) {
   const token = getToken();
   const res = await fetch(`${BASE_URL}/api/nextcloud/configure`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...getNgrokHeaders(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ url, username, password }),
@@ -389,7 +429,7 @@ export async function configureNextcloud({ url, username, password }) {
   return res.json();
 }
 
-/** Test WebDAV before saving. */
+/** Test file-server connection before saving. */
 export async function testFileServerConnection({ url, username, password }) {
   return request('/api/file-server/test', {
     method: 'POST',
@@ -463,7 +503,7 @@ export async function uploadFile(file, departmentId, project = 'General') {
 
   const response = await fetch(`${BASE_URL}/api/upload`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, ...PORTAL_CLIENT_HEADER },
+    headers: { ...getNgrokHeaders(), Authorization: `Bearer ${token}`, ...PORTAL_CLIENT_HEADER },
     body: formData,
   });
 
