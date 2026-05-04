@@ -225,7 +225,7 @@ export async function setupAdmin({ email, username, password }) {
 export async function fetchDepartmentsPublic() {
   let res;
   try {
-    res = await fetch(`${BASE_URL}/api/departments`, { headers: { ...getNgrokHeaders() } });
+    res = await fetch(`${BASE_URL}/api/departments?refresh=1`, { headers: { ...getNgrokHeaders() } });
   } catch (e) {
     throw new Error(
       `Could not reach portal API (${e?.message || 'network error'}). Confirm the dev server proxies to Node on port 3000 or set VITE_BACKEND_API_URL.`,
@@ -240,6 +240,20 @@ export async function fetchDepartmentsPublic() {
   }
   const data = await res.json();
   return data?.departments ?? [];
+}
+
+/** Public bridge/tunnel diagnostics (no auth). `quick` uses a shorter upstream timeout. */
+export async function fetchBridgeHealth(options = {}) {
+  const quick = Boolean(options.quick);
+  const q = quick ? '?quick=1' : '';
+  const res = await fetch(`${BASE_URL}/api/bridge-health${q}`, {
+    headers: { ...getNgrokHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error || `Bridge health failed: ${res.status}`);
+  }
+  return res.json();
 }
 
 /** Login with file server credentials. */

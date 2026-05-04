@@ -25,7 +25,7 @@ export default function Dashboard() {
         title: 'Files',
         value: String(stats?.totalFiles ?? 0),
         Icon: IconDocument,
-        tone: 'text-blue-700 bg-blue-50',
+        tone: 'text-neutral-800 bg-neutral-200',
         to: '/site-files',
       },
       {
@@ -33,7 +33,7 @@ export default function Dashboard() {
         title: 'Departments',
         value: String(stats?.totalDepartments ?? 0),
         Icon: IconFolder,
-        tone: 'text-emerald-700 bg-emerald-50',
+        tone: 'text-neutral-900 bg-neutral-100',
         to: '/site-files',
       },
       {
@@ -41,7 +41,7 @@ export default function Dashboard() {
         title: 'Recent uploads',
         value: String(recentUploads.length),
         Icon: IconCloudUpload,
-        tone: 'text-amber-700 bg-amber-50',
+        tone: 'text-neutral-800 bg-neutral-300/80',
         to: '/recent-uploads',
       },
       {
@@ -49,7 +49,7 @@ export default function Dashboard() {
         title: 'Activity',
         value: String(activity.length),
         Icon: IconDashboard,
-        tone: 'text-slate-700 bg-slate-100',
+        tone: 'text-neutral-800 bg-white ring-1 ring-neutral-200',
         to: '/activity-logs',
       },
     ],
@@ -67,15 +67,15 @@ export default function Dashboard() {
             <Link
               key={card.key}
               to={card.to}
-              className="card block w-full rounded-2xl border border-slate-200/90 p-5 text-left transition-all hover:border-emerald-300/80 hover:shadow-md active:scale-[0.99]"
+              className="card block w-full rounded-2xl border border-neutral-200/90 p-5 text-left transition-all hover:border-neutral-400 hover:shadow-md active:scale-[0.99]"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.title}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{card.title}</span>
                 <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${card.tone}`}>
                   <CardIcon className="h-4 w-4" />
                 </span>
               </div>
-              <p className="mt-4 text-3xl font-bold tabular-nums leading-tight text-slate-900">{card.value}</p>
+              <p className="mt-4 text-3xl font-bold tabular-nums leading-tight text-neutral-950">{card.value}</p>
             </Link>
           );
         })}

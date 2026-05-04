@@ -37,7 +37,7 @@ export default function FileServerStatusBanner() {
           ? `Files · ${host} · ${n} folder${n === 1 ? '' : 's'}`
           : `Files · ${host}${n ? ` · ${n} folder${n === 1 ? '' : 's'}` : ''}`,
       );
-      tone = 'border-emerald-200 bg-emerald-50 text-emerald-900';
+      tone = 'border-neutral-300 bg-neutral-100 text-neutral-900';
     } else if (w?.configured) {
       storageParts.push(`Files · not connected · ${w.error || 'Check Settings'}`);
       tone = 'border-amber-200 bg-amber-50 text-amber-900';
@@ -57,7 +57,7 @@ export default function FileServerStatusBanner() {
         storageParts.push(
           `Remote bridge · ${detail}${isAdmin && data?.remoteAuthUrl ? ` · ${data.remoteAuthUrl}` : ra.host ? ` · ${ra.host}` : ''}`,
         );
-        if (tone.includes('amber') && !w?.configured) tone = 'border-emerald-200 bg-emerald-50 text-emerald-900';
+        if (tone.includes('amber') && !w?.configured) tone = 'border-neutral-300 bg-neutral-100 text-neutral-900';
       } else if (!ra.reachable) {
         const errRaw = ra.error ? String(ra.error) : '';
         const errShort =
@@ -67,7 +67,7 @@ export default function FileServerStatusBanner() {
         storageParts.push(
           `Remote login API · unreachable${errShort ? ` (${errShort})` : ''}`,
         );
-        if (tone.includes('emerald')) tone = 'border-amber-200 bg-amber-50 text-amber-900';
+        if (tone.includes('neutral-100')) tone = 'border-amber-200 bg-amber-50 text-amber-900';
       }
     }
 
@@ -85,7 +85,7 @@ export default function FileServerStatusBanner() {
         {isAdmin && !onSettingsPage ? (
           <Link
             to="/system-settings"
-            className="shrink-0 rounded-lg bg-[#0e5b45] px-3 py-2 text-xs font-semibold text-white hover:bg-[#0c4d3a] min-h-[40px] min-w-[44px] inline-flex items-center justify-center sm:min-h-0 sm:py-1.5"
+            className="shrink-0 rounded-lg bg-neutral-950 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800 min-h-[40px] min-w-[44px] inline-flex items-center justify-center sm:min-h-0 sm:py-1.5"
           >
             Settings
           </Link>

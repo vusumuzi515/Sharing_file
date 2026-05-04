@@ -164,9 +164,9 @@ export default function SystemSettings() {
             {fileError ? <div className="alert-error text-sm">{fileError}</div> : null}
 
             {fsStatus?.connected && !fileSuccess ? (
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-emerald-200 bg-emerald-50/95 px-3 py-2.5 text-sm text-emerald-950">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-2.5 text-sm text-neutral-950">
                 <span className="font-semibold">Connected</span>
-                <span className="text-emerald-900/85">
+                <span className="text-neutral-700">
                   {fsStatus.folders?.slice(0, 6).join(' · ') || '—'}
                   {fsStatus.folders?.length > 6 ? '…' : ''}
                 </span>

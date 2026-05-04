@@ -44,7 +44,7 @@ export default function ActivityLogs() {
         <PageHeader title="File Activity Logs" />
         <div className="card rounded-2xl p-8 text-center text-slate-600">
           <p>
-            <Link to="/site-files" className="font-semibold text-[#0e5b45] underline">
+            <Link to="/site-files" className="font-semibold text-neutral-950 underline underline-offset-2 hover:text-neutral-700">
               Sign in
             </Link>{' '}
             to continue.

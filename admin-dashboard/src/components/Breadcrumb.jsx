@@ -34,7 +34,7 @@ export default function Breadcrumb({ departmentName, folderName, departmentId })
           {item.to ? (
             <Link
               to={item.to}
-              className="transition-colors hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
+              className="transition-colors hover:text-neutral-950 focus:outline-none focus:ring-2 focus:ring-neutral-950 focus:ring-offset-1 rounded"
             >
               {item.label}
             </Link>

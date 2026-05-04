@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   fetchDepartmentsPublic,
+  fetchDepartments,
   getDownloadUrl,
   getFilePreviewPageUrl,
   getCurrentUser,
   loginDashboard,
   refreshFilesFromServerCache,
   uploadFile,
+  fetchBridgeHealth,
 } from '../services/monitoringApi';
 import { useAuthSync } from '../hooks/useAuthSync';
 import { useDepartments, useFiles, useProjects, useRefreshDepartments } from '../hooks/useFiles';
@@ -93,13 +95,7 @@ export default function SiteFiles() {
     if (filesError) showToast(filesError?.message ?? 'Could not load files');
   }, [filesError, showToast]);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      setPublicDepartments([]);
-      setPublicDeptsLoading(false);
-      setPublicDeptError('');
-      return;
-    }
+  const reloadGuestDepartments = useCallback(() => {
     setPublicDeptsLoading(true);
     setPublicDeptError('');
     fetchDepartmentsPublic()
@@ -110,13 +106,39 @@ export default function SiteFiles() {
           has_access: true,
         }));
         setPublicDepartments(mapped);
+        const empty = !items || items.length === 0;
+        if (empty) {
+          fetchBridgeHealth({ quick: true })
+            .then((health) => {
+              if (health?.configured && !health?.reachable && (health?.hint || health?.error)) {
+                setPublicDeptError(String(health.hint || health.error));
+              } else if (health?.reachable && health?.exists) {
+                setPublicDeptError(
+                  'Connected to the file server, but no departments were listed. Add department folders under the root path on the server.',
+                );
+              } else if (health?.reachable && health?.error) {
+                setPublicDeptError(String(health.error));
+              }
+            })
+            .catch(() => {});
+        }
       })
       .catch((e) => {
         setPublicDepartments([]);
         setPublicDeptError(e?.message || 'Could not load departments');
       })
       .finally(() => setPublicDeptsLoading(false));
-  }, [isAuthenticated]);
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setPublicDepartments([]);
+      setPublicDeptsLoading(false);
+      setPublicDeptError('');
+      return;
+    }
+    reloadGuestDepartments();
+  }, [isAuthenticated, reloadGuestDepartments]);
 
   const deptListLoading = isAuthenticated ? deptsLoading : publicDeptsLoading;
 
@@ -137,6 +159,17 @@ export default function SiteFiles() {
     setDeptPickerQuery('');
     setDeptPickerOpen(true);
     queueMicrotask(() => deptSearchInputRef.current?.focus());
+    if (isAuthenticated) {
+      fetchDepartments(true)
+        .then((data) => {
+          queryClient.setQueryData(['departments', false], data);
+        })
+        .catch(() => {
+          queryClient.invalidateQueries({ queryKey: ['departments'] });
+        });
+    } else {
+      reloadGuestDepartments();
+    }
   };
 
   useEffect(() => {
@@ -471,7 +504,7 @@ export default function SiteFiles() {
                                   type="button"
                                   onClick={() => handleProjectSelect(project.id)}
                                   className={`flex w-full items-center rounded-xl px-3 py-2 text-left text-sm ${
-                                    isSelected ? 'bg-[#0e5b45] text-white' : 'text-slate-700 hover:bg-slate-50'
+                                    isSelected ? 'bg-neutral-950 text-white' : 'text-neutral-700 hover:bg-neutral-100'
                                   }`}
                                 >
                                   {project.name}
@@ -543,7 +576,7 @@ export default function SiteFiles() {
               type="button"
               onClick={openDepartmentPicker}
               disabled={deptListLoading && departmentsWithAccess.length === 0}
-              className="inline-flex min-h-[48px] items-center gap-2.5 rounded-full bg-[#0e5b45] px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-950/15 transition hover:bg-[#0b4737] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0e5b45] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
+              className="inline-flex min-h-[48px] items-center gap-2.5 rounded-full bg-neutral-950 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/25 transition hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
             >
               <IconSearch className="h-5 w-5 opacity-95" aria-hidden />
               {deptListLoading && departmentsWithAccess.length === 0 ? 'Loading…' : 'Find department'}
@@ -579,7 +612,7 @@ export default function SiteFiles() {
                 placeholder="Search departments"
                 value={deptPickerQuery}
                 onChange={(e) => setDeptPickerQuery(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white/80 py-2.5 pl-9 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#0e5b45]/40 focus:outline-none focus:ring-2 focus:ring-[#0e5b45]/25"
+                className="w-full rounded-xl border border-neutral-300 bg-white/90 py-2.5 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-950/40 focus:outline-none focus:ring-2 focus:ring-neutral-950/20"
               />
             </div>
             <div className="mt-2 max-h-[min(50vh,18rem)] overflow-y-auto overscroll-contain rounded-xl border border-slate-100 bg-slate-50/80">

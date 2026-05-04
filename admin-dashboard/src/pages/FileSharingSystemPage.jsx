@@ -13,7 +13,7 @@ export default function FileSharingSystemPage() {
     let mounted = true;
     setLoading(true);
 
-    Promise.all([fetchMonitoringStats(), fetchDepartments(), fetchActivity()])
+    Promise.all([fetchMonitoringStats(), fetchDepartments(true), fetchActivity()])
       .then(([statsRes, departmentsRes, activityRes]) => {
         if (!mounted) return;
         setStats(statsRes || null);
@@ -51,28 +51,28 @@ export default function FileSharingSystemPage() {
         title: 'Departments',
         value: String(accessibleCount),
         Icon: IconFolder,
-        tone: 'bg-blue-50 text-blue-700',
+        tone: 'bg-neutral-200 text-neutral-900',
         to: '/site-files',
       },
       {
         title: 'Recent files',
         value: String(recentFilesCount),
         Icon: IconCheck,
-        tone: 'bg-emerald-50 text-emerald-700',
+        tone: 'bg-neutral-300 text-neutral-900',
         to: '/recent',
       },
       {
         title: 'Activity',
         value: String(activityCount),
         Icon: IconClipboard,
-        tone: 'bg-amber-50 text-amber-700',
+        tone: 'bg-neutral-100 text-neutral-800',
         to: '/activity',
       },
       {
         title: 'Users',
         value: String(stats?.activeUsers ?? 0),
         Icon: IconUsers,
-        tone: 'bg-slate-100 text-slate-700',
+        tone: 'bg-white text-neutral-900 ring-1 ring-neutral-200',
         to: '/users',
       },
     ],
@@ -88,15 +88,15 @@ export default function FileSharingSystemPage() {
             <Link
               key={card.title}
               to={card.to}
-              className="card block cursor-pointer p-5 transition-all duration-200 hover:-translate-y-1 hover:border-emerald-300/80 hover:shadow-lg active:translate-y-0 active:scale-[0.99]"
+              className="card block cursor-pointer p-5 transition-all duration-200 hover:-translate-y-1 hover:border-neutral-400 hover:shadow-lg active:translate-y-0 active:scale-[0.99]"
             >
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.title}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{card.title}</p>
                 <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${card.tone}`}>
                   <CardIcon className="h-4 w-4" />
                 </span>
               </div>
-              <p className="mt-4 text-3xl font-bold tabular-nums leading-tight text-slate-900">
+              <p className="mt-4 text-3xl font-bold tabular-nums leading-tight text-neutral-950">
                 {loading ? '—' : card.value}
               </p>
             </Link>

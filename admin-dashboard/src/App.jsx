@@ -59,7 +59,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="portal-shell-bg flex h-[100dvh] min-h-0 items-center justify-center">
-        <p className="rounded-xl border border-white/40 bg-white/80 px-6 py-3 text-sm font-medium text-slate-600 shadow-sm backdrop-blur-sm">
+        <p className="rounded-xl border border-neutral-300 bg-white px-6 py-3 text-sm font-medium text-neutral-700 shadow-sm">
           Loading…
         </p>
       </div>
