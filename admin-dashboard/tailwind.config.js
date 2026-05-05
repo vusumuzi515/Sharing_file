@@ -4,21 +4,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        /** Monochrome corporate theme (Inyatsi Group Holdings artwork). */
         brand: {
-          DEFAULT: '#0a0a0a',
-          light: '#262626',
-          dark: '#000000',
-          muted: '#737373',
-          line: '#d4d4d4',
-          wash: '#f5f5f5',
+          DEFAULT: '#18181b',
+          light: '#3f3f46',
+          dark: '#09090b',
         },
-        primary: { DEFAULT: '#0a0a0a', light: '#262626' },
-        accent: { DEFAULT: '#404040', light: '#e5e5e5' },
+        primary: { DEFAULT: '#0f172a', light: '#1e293b' },
+        accent: { DEFAULT: '#f59e0b', light: '#fef3c7' },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-        serif: ['Crimson Pro', 'Georgia', 'Times New Roman', 'serif'],
       },
       boxShadow: {
         'card': '0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05)',

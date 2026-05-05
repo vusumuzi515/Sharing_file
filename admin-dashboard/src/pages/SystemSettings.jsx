@@ -7,6 +7,8 @@ import {
   configureFileServerConnection,
   refreshDepartments,
   testFileServerConnection,
+  fetchAdminLandingContent,
+  updateAdminLandingContent,
 } from '../services/monitoringApi';
 export default function SystemSettings() {
   const queryClient = useQueryClient();
@@ -29,6 +31,15 @@ export default function SystemSettings() {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
+  const [landSlogan, setLandSlogan] = useState('');
+  const [landPrinciple, setLandPrinciple] = useState('');
+  const [landCoreValuesText, setLandCoreValuesText] = useState('');
+  const [landLoading, setLandLoading] = useState(true);
+  const [landSaving, setLandSaving] = useState(false);
+  const [landLoadError, setLandLoadError] = useState('');
+  const [landError, setLandError] = useState('');
+  const [landSuccess, setLandSuccess] = useState('');
+
   const reloadStatus = () => {
     setFsLoading(true);
     getFileServerConnectionStatus()
@@ -49,6 +60,33 @@ export default function SystemSettings() {
       })
       .catch(() => setAdminError('Could not load credentials'))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchAdminLandingContent()
+      .then((data) => {
+        setLandLoadError('');
+        setLandSlogan(data?.slogan || '');
+        setLandPrinciple(data?.principle || '');
+        const lines = Array.isArray(data?.coreValues) ? data.coreValues : [];
+        setLandCoreValuesText(lines.join('\n'));
+      })
+      .catch(() => {
+        setLandLoadError('Could not load current landing copy from the server. Defaults are shown; you can still save.');
+        setLandSlogan("Africa's leading integrated business partner");
+        setLandPrinciple('Zero Tolerance');
+        setLandCoreValuesText(
+          [
+            'Accountability',
+            'Agility',
+            'Commitment',
+            'Embrace Change',
+            'Teamwork',
+            'Tempo',
+          ].join('\n'),
+        );
+      })
+      .finally(() => setLandLoading(false));
   }, []);
 
   useEffect(() => {
@@ -118,6 +156,42 @@ export default function SystemSettings() {
     }
   };
 
+  const handleSaveLanding = async (e) => {
+    e.preventDefault();
+    setLandError('');
+    setLandSuccess('');
+    setAdminError('');
+    setAdminSuccess('');
+    setFileError('');
+    setFileSuccess('');
+    const coreValues = landCoreValuesText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!landSlogan.trim() || !landPrinciple.trim()) {
+      setLandError('Slogan and principle are required.');
+      return;
+    }
+    if (coreValues.length < 1) {
+      setLandError('Enter at least one core value (one per line).');
+      return;
+    }
+    setLandSaving(true);
+    try {
+      await updateAdminLandingContent({
+        slogan: landSlogan.trim(),
+        principle: landPrinciple.trim(),
+        coreValues,
+      });
+      setLandLoadError('');
+      setLandSuccess('Landing page updated. Changes appear on the home page for everyone.');
+    } catch (err) {
+      setLandError(err?.message || 'Save failed');
+    } finally {
+      setLandSaving(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAdminError('');
@@ -164,9 +238,9 @@ export default function SystemSettings() {
             {fileError ? <div className="alert-error text-sm">{fileError}</div> : null}
 
             {fsStatus?.connected && !fileSuccess ? (
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-2.5 text-sm text-neutral-950">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2.5 text-sm text-zinc-900">
                 <span className="font-semibold">Connected</span>
-                <span className="text-neutral-700">
+                <span className="text-zinc-700">
                   {fsStatus.folders?.slice(0, 6).join(' · ') || '—'}
                   {fsStatus.folders?.length > 6 ? '…' : ''}
                 </span>
@@ -236,6 +310,71 @@ export default function SystemSettings() {
               </p>
             ) : null}
           </div>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+        <div className="border-b border-slate-100 bg-slate-50/80 px-6 py-4 sm:px-8">
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Public landing page</h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Text shown on the home page (<span className="font-mono text-xs">/</span>) before sign-in. Only
+            administrators can change this.
+          </p>
+        </div>
+        {landLoading ? (
+          <p className="px-6 py-8 text-sm text-slate-500 sm:px-8">Loading…</p>
+        ) : (
+          <form onSubmit={handleSaveLanding} className="space-y-4 px-6 py-6 sm:px-8">
+            {landLoadError ? <p className="alert-error text-sm">{landLoadError}</p> : null}
+            {landError ? <p className="alert-error text-sm">{landError}</p> : null}
+            {landSuccess ? <p className="alert-success text-sm">{landSuccess}</p> : null}
+            <div>
+              <label htmlFor="land-slogan" className="block text-sm font-medium text-slate-700">
+                Slogan
+              </label>
+              <input
+                id="land-slogan"
+                type="text"
+                value={landSlogan}
+                onChange={(e) => setLandSlogan(e.target.value)}
+                className="input mt-1 w-full max-w-xl"
+                maxLength={280}
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label htmlFor="land-principle" className="block text-sm font-medium text-slate-700">
+                Principle
+              </label>
+              <input
+                id="land-principle"
+                type="text"
+                value={landPrinciple}
+                onChange={(e) => setLandPrinciple(e.target.value)}
+                className="input mt-1 w-full max-w-xl"
+                maxLength={120}
+                placeholder="e.g. Zero Tolerance"
+                autoComplete="off"
+              />
+              <p className="mt-1 text-xs text-slate-500">Shown above the “Enter file portal” button.</p>
+            </div>
+            <div>
+              <label htmlFor="land-core" className="block text-sm font-medium text-slate-700">
+                Core values
+              </label>
+              <textarea
+                id="land-core"
+                value={landCoreValuesText}
+                onChange={(e) => setLandCoreValuesText(e.target.value)}
+                rows={8}
+                className="input mt-1 w-full max-w-xl font-mono text-sm"
+                placeholder={'One value per line\n(up to 12 lines)'}
+              />
+            </div>
+            <button type="submit" disabled={landSaving} className="btn btn-primary">
+              {landSaving ? 'Saving…' : 'Save landing page'}
+            </button>
+          </form>
         )}
       </div>
 

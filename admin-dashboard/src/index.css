@@ -1,49 +1,57 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Dark suit / values-wheel palette (monochrome corporate). */
+:root {
+  --inyatsi-bg: #07090d;
+  --inyatsi-bg-mid: #0e131c;
+  --inyatsi-accent: #e8eaed;
+  --inyatsi-accent-hover: #ffffff;
+  --inyatsi-accent-deep: #050608;
+  --inyatsi-ring: rgba(255, 255, 255, 0.08);
+}
 
 html {
   @apply overflow-x-hidden scroll-smooth;
 }
 
 body {
-  @apply font-sans text-neutral-900 antialiased overflow-x-hidden;
+  @apply font-sans antialiased overflow-x-hidden text-zinc-100;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  background-color: #ebebeb;
+  background-color: var(--inyatsi-bg);
 }
 
-/* Shared shell background for all pages */
+/* App shell: wheel fills viewport (cover), vignette keeps UI readable without hiding ring copy. */
 .portal-shell-bg {
   position: relative;
   isolation: isolate;
-  background-color: #ececec;
+  background-color: var(--inyatsi-bg);
   background-image:
-    linear-gradient(
-      165deg,
-      rgba(250, 250, 250, 0.98) 0%,
-      rgba(235, 235, 235, 0.96) 48%,
-      rgba(228, 228, 228, 0.94) 100%
+    radial-gradient(
+      ellipse 125% 100% at 50% 44%,
+      rgba(7, 9, 13, 0) 0%,
+      rgba(7, 9, 13, 0.28) 45%,
+      rgba(5, 6, 8, 0.82) 100%
     ),
-    radial-gradient(ellipse 72% 56% at 50% 38%, rgba(255, 255, 255, 0.55) 0%, transparent 60%);
-  background-size: auto;
-  background-position: center;
-  background-repeat: no-repeat;
+    linear-gradient(180deg, rgba(12, 16, 24, 0.12) 0%, rgba(7, 9, 13, 0.58) 100%),
+    url("/inyatsi-values-wheel.png");
+  background-size: auto, auto, cover;
+  background-position: center, center, center 46%;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+}
+
+/* Desktop: optically centre wheel in main column (sidebar is w-64 → shift +8rem). */
+@media (min-width: 1024px) {
+  .portal-shell-bg:not(.landing-hero) {
+    background-position: center, center, calc(50% + 8rem) 46%;
+  }
 }
 
 .portal-shell-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: url("/splash-logo.png");
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
-  opacity: 0.07;
-  filter: grayscale(1);
+  display: none;
 }
 
 .portal-shell-bg > * {
@@ -51,61 +59,65 @@ body {
   z-index: 1;
 }
 
-/* Landing only: softer gradient wash + clearer watermark (same splash asset as other pages). */
+body:has(.landing-hero) {
+  @apply bg-white text-zinc-900;
+}
+
+/* Landing only: full-page logo backdrop — dashboard unchanged. */
 .landing-hero.portal-shell-bg {
   min-height: 100dvh;
   min-height: 100vh;
   width: 100%;
   flex: 1 1 auto;
-  background-image:
-    linear-gradient(
-      165deg,
-      rgba(252, 252, 252, 0.5) 0%,
-      rgba(236, 236, 236, 0.42) 48%,
-      rgba(224, 224, 224, 0.36) 100%
-    ),
-    radial-gradient(ellipse 78% 58% at 50% 40%, rgba(255, 255, 255, 0.35) 0%, transparent 58%);
+  background-color: #ffffff;
+  background-image: url('/logo.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: contain;
 }
 
 .landing-hero.portal-shell-bg::before {
-  opacity: 0.12;
+  display: none;
 }
 
-/* Page structure */
+/* Page structure — light copy on dark shell (cards stay white). */
 .page-title {
-  @apply text-xl font-bold tracking-tight text-neutral-900 sm:text-2xl;
+  @apply text-xl font-bold tracking-tight text-white sm:text-2xl;
 }
 
 .page-subtitle {
-  @apply mt-1 text-sm text-neutral-600;
+  @apply mt-1 text-sm text-zinc-400;
 }
 
-/* Enterprise card styling */
+/* Enterprise card styling — bright surfaces on dark chrome */
 @layer components {
   .card {
-    @apply rounded-2xl border border-neutral-200/90 bg-white;
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+    @apply rounded-2xl border border-white/10 bg-white text-slate-900 shadow-xl shadow-black/30;
+    box-shadow:
+      0 1px 3px 0 rgb(0 0 0 / 0.2),
+      0 8px 24px -8px rgb(0 0 0 / 0.35);
   }
   .card-hover {
     @apply transition-all duration-200;
   }
   .card-hover:hover {
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    box-shadow:
+      0 4px 6px -1px rgb(0 0 0 / 0.25),
+      0 12px 28px -12px rgb(0 0 0 / 0.4);
   }
   .card-header {
-    @apply border-b border-neutral-100 px-5 py-4;
+    @apply border-b border-slate-100 px-5 py-4;
   }
   .card-title {
-    @apply text-base font-semibold text-neutral-900;
+    @apply text-base font-semibold text-slate-800;
   }
   .card-subtitle {
-    @apply text-sm text-neutral-600;
+    @apply text-sm text-slate-500;
   }
   .card-meta {
-    @apply text-xs text-neutral-500;
+    @apply text-xs text-slate-400;
   }
 
-  /* Buttons */
   .btn {
     @apply inline-flex items-center justify-center rounded-xl font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
   }
@@ -116,60 +128,52 @@ body {
     @apply min-h-[44px] px-5 text-sm;
   }
   .btn-primary {
-    @apply btn btn-md bg-neutral-950 text-white hover:bg-neutral-800;
+    @apply btn btn-md bg-white font-semibold text-zinc-950 shadow-lg shadow-black/25 hover:bg-zinc-100;
   }
   .btn-primary:focus {
-    --tw-ring-color: rgb(23 23 23 / 0.45);
+    --tw-ring-color: rgb(255 255 255 / 0.35);
+    --tw-ring-offset-color: #07090d;
   }
   .btn-secondary {
-    @apply btn btn-md border border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50 focus:ring-neutral-400;
+    @apply btn btn-md border border-white/20 bg-white/10 text-white hover:bg-white/15 focus:ring-white/30 focus:ring-offset-zinc-950;
   }
   .btn-ghost {
-    @apply btn btn-md text-neutral-600 hover:bg-neutral-100 focus:ring-neutral-400;
+    @apply btn btn-md text-zinc-300 hover:bg-white/10 focus:ring-white/20 focus:ring-offset-zinc-950;
   }
 
-  /* Form inputs */
   .input {
-    @apply w-full rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder-neutral-400 transition-colors focus:outline-none focus:ring-2;
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition-colors focus:outline-none focus:ring-2;
   }
   .input:focus {
-    border-color: #171717;
-    --tw-ring-color: rgb(23 23 23 / 0.25);
+    border-color: #27272a;
+    --tw-ring-color: rgb(39 39 42 / 0.35);
   }
 
-  /* Alerts */
   .alert-error {
-    @apply rounded-xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-800;
+    @apply rounded-xl border border-amber-500/30 bg-amber-950/40 px-4 py-3 text-sm text-amber-100;
   }
   .alert-success {
-    @apply rounded-xl border border-neutral-300/80 bg-neutral-100 px-4 py-3 text-sm text-neutral-900;
+    @apply rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-zinc-100;
   }
 
-  /* Badge */
   .badge {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
   .badge-view {
-    @apply badge bg-amber-100 text-amber-800;
+    @apply badge bg-zinc-800 text-zinc-200;
   }
   .badge-edit {
-    @apply badge bg-neutral-800 text-neutral-100;
+    @apply badge bg-white/15 text-white;
   }
 
-  /* Table */
   .table-header {
-    @apply border-b border-neutral-200 text-left text-xs font-semibold uppercase tracking-wider text-neutral-600;
+    @apply border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider text-slate-500;
   }
   .table-cell {
-    @apply py-4 text-sm text-neutral-800;
-  }
-
-  .tagline-serif {
-    font-family: 'Crimson Pro', Georgia, 'Times New Roman', serif;
+    @apply py-4 text-sm text-slate-700;
   }
 }
 
-/* Smooth transitions */
 @layer utilities {
   .transition-page {
     @apply transition-all duration-200 ease-out;

@@ -309,6 +309,40 @@ export async function fetchAdminCredentials() {
   return res.json();
 }
 
+/** Public copy shown on `/` (no auth). */
+export async function fetchPublicLandingContent() {
+  const res = await fetch(`${BASE_URL}/api/public/landing-content`, {
+    headers: { ...getNgrokHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error || `Could not load landing content: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchAdminLandingContent() {
+  return request('/api/admin/landing-content');
+}
+
+export async function updateAdminLandingContent({ slogan, principle, coreValues }) {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}/api/admin/landing-content`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getNgrokHeaders(),
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ slogan, principle, coreValues }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error || `Update failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 async function request(path, opts = {}) {
   const token = getToken();
   if (!token) throw new Error('Not authenticated');

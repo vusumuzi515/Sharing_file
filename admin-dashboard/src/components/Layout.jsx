@@ -23,6 +23,7 @@ export default function Layout() {
   const { user } = useAuthSync();
   const { isAdmin } = useIsAdmin();
   const path = location.pathname;
+  const isDashboardSummary = path === '/dashboard';
   const baseTitle = pageTitles[path] ?? path.slice(1).replace(/-/g, ' ');
   const pageTitle =
     path === '/users' && !isAdmin && user?.department ? user.department : baseTitle;
@@ -35,8 +36,18 @@ export default function Layout() {
           <TopBar onMenuClick={() => setSidebarOpen(true)} pageTitle={pageTitle} />
           <FileServerStatusBanner />
         </div>
-        <main className="no-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] sm:pt-8 sm:pb-8">
-          <div className="w-full max-w-none px-3 sm:px-6 lg:px-10">
+        <main
+          className={`no-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent ${
+            isDashboardSummary
+              ? 'pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-2 sm:pt-4 sm:pb-5'
+              : 'pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] pt-4 sm:pt-8 sm:pb-8'
+          }`}
+        >
+          <div
+            className={`w-full max-w-none ${
+              isDashboardSummary ? 'px-3 sm:px-4 lg:px-6' : 'px-3 sm:px-6 lg:px-10'
+            }`}
+          >
             <Outlet />
           </div>
         </main>

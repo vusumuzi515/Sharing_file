@@ -118,7 +118,7 @@ export default function RecentUploads() {
         <PageHeader title="Recent Files Shared" />
         <div className="card rounded-2xl p-8 text-center text-slate-600">
           <p>
-            <Link to="/site-files" className="font-semibold text-neutral-950 underline underline-offset-2 hover:text-neutral-700">
+            <Link to="/site-files" className="font-semibold text-zinc-900 underline decoration-zinc-400 underline-offset-2 hover:text-zinc-700">
               Sign in
             </Link>{' '}
             to continue.

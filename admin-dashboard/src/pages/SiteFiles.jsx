@@ -116,8 +116,6 @@ export default function SiteFiles() {
                 setPublicDeptError(
                   'Connected to the file server, but no departments were listed. Add department folders under the root path on the server.',
                 );
-              } else if (health?.reachable && health?.error) {
-                setPublicDeptError(String(health.error));
               }
             })
             .catch(() => {});
@@ -504,7 +502,7 @@ export default function SiteFiles() {
                                   type="button"
                                   onClick={() => handleProjectSelect(project.id)}
                                   className={`flex w-full items-center rounded-xl px-3 py-2 text-left text-sm ${
-                                    isSelected ? 'bg-neutral-950 text-white' : 'text-neutral-700 hover:bg-neutral-100'
+                                    isSelected ? 'bg-zinc-950 text-white' : 'text-slate-700 hover:bg-slate-50'
                                   }`}
                                 >
                                   {project.name}
@@ -576,7 +574,7 @@ export default function SiteFiles() {
               type="button"
               onClick={openDepartmentPicker}
               disabled={deptListLoading && departmentsWithAccess.length === 0}
-              className="inline-flex min-h-[48px] items-center gap-2.5 rounded-full bg-neutral-950 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/25 transition hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
+              className="inline-flex min-h-[48px] items-center gap-2.5 rounded-full bg-zinc-950 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/30 transition hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 focus-visible:ring-offset-[#07090d] disabled:pointer-events-none disabled:opacity-60"
             >
               <IconSearch className="h-5 w-5 opacity-95" aria-hidden />
               {deptListLoading && departmentsWithAccess.length === 0 ? 'Loading…' : 'Find department'}
@@ -612,7 +610,7 @@ export default function SiteFiles() {
                 placeholder="Search departments"
                 value={deptPickerQuery}
                 onChange={(e) => setDeptPickerQuery(e.target.value)}
-                className="w-full rounded-xl border border-neutral-300 bg-white/90 py-2.5 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-950/40 focus:outline-none focus:ring-2 focus:ring-neutral-950/20"
+                className="w-full rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-9 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-zinc-950/40 focus:outline-none focus:ring-2 focus:ring-zinc-950/20"
               />
             </div>
             <div className="mt-2 max-h-[min(50vh,18rem)] overflow-y-auto overscroll-contain rounded-xl border border-slate-100 bg-slate-50/80">
