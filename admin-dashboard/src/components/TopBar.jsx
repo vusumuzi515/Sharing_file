@@ -43,7 +43,7 @@ export default function TopBar({ onMenuClick, pageTitle }) {
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-base font-semibold uppercase tracking-[0.12em] sm:text-lg lg:text-xl">
-                Inyatsi
+                Inyatsi Domain Portal
               </h1>
               <p className="truncate text-xs text-zinc-400 sm:text-sm lg:text-[15px]">
                 {pageTitle || 'Department Files'}

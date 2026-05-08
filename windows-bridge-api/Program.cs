@@ -349,7 +349,9 @@ app.MapGet("/api/departments", (string? username, IConfiguration config) =>
         {
             var name = Path.GetFileName(dir);
             var expectedGroup = GetDepartmentUsersGroupName(name);
-            var hasAccess = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
+            var hasAccessByGroup = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
+            var hasAccessByAcl = GetBasicPermissions(dir, username, userGroups).canView;
+            var hasAccess = hasAccessByGroup || hasAccessByAcl;
             return new
             {
                 id = name.Trim().ToLower().Replace(" ", "_"),
@@ -397,12 +399,6 @@ app.MapGet("/api/department-content", (string department, string? username, ICon
 
     var userGroups = string.IsNullOrWhiteSpace(username) ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : GetUserLocalGroups(username);
     var expectedGroup = GetDepartmentUsersGroupName(requested);
-    var hasAccess = userGroups.Count == 0 || userGroups.Contains(expectedGroup);
-    if (!hasAccess)
-    {
-        return Results.StatusCode(StatusCodes.Status403Forbidden);
-    }
-
     var resolvedDepartment = ResolveDepartmentDirectory(rootPath, requested);
     if (resolvedDepartment is null)
     {
@@ -410,6 +406,13 @@ app.MapGet("/api/department-content", (string department, string? username, ICon
     }
     var departmentName = resolvedDepartment.Value.Name;
     var departmentPath = resolvedDepartment.Value.Path;
+    var hasAccessByGroup = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
+    var hasAccessByAcl = GetBasicPermissions(departmentPath, username, userGroups).canView;
+    var hasAccess = hasAccessByGroup || hasAccessByAcl;
+    if (!hasAccess)
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
 
     var folders = Directory.GetDirectories(departmentPath)
         .Select(dir => new
@@ -467,14 +470,6 @@ app.MapGet("/api/files", (string department, string? username, IConfiguration co
         return Results.BadRequest(new { error = "department is required." });
     }
 
-    var userGroups = string.IsNullOrWhiteSpace(username) ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : GetUserLocalGroups(username);
-    var expectedGroup = GetDepartmentUsersGroupName(requested);
-    var hasAccess = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
-    if (!hasAccess)
-    {
-        return Results.StatusCode(StatusCodes.Status403Forbidden);
-    }
-
     var resolvedDepartment = ResolveDepartmentDirectory(rootPath, requested);
     if (resolvedDepartment is null)
     {
@@ -482,6 +477,14 @@ app.MapGet("/api/files", (string department, string? username, IConfiguration co
     }
     var departmentName = resolvedDepartment.Value.Name;
     var departmentPath = resolvedDepartment.Value.Path;
+    var userGroups = string.IsNullOrWhiteSpace(username) ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : GetUserLocalGroups(username);
+    var expectedGroup = GetDepartmentUsersGroupName(requested);
+    var hasAccess = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
+    if (!hasAccess)
+    {
+        var aclAllowed = GetBasicPermissions(departmentPath, username, userGroups).canView;
+        if (!aclAllowed) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
 
     var files = EnumerateFilesSafe(departmentPath)
         .Select(file =>
@@ -509,6 +512,110 @@ app.MapGet("/api/files", (string department, string? username, IConfiguration co
         count = files.Length,
         files
     });
+});
+
+app.MapPost("/api/files/upload", async (HttpRequest request, string? department, string? project, string? username, IConfiguration config) =>
+{
+    var rootPath = config["FileServer:RootPath"] ?? "";
+    if (string.IsNullOrWhiteSpace(rootPath))
+    {
+        return Results.BadRequest(new { error = "FileServer:RootPath is not configured." });
+    }
+
+    if (!Directory.Exists(rootPath))
+    {
+        return Results.NotFound(new { error = "Root folder does not exist.", rootPath });
+    }
+
+    var requested = ResolveRequestedDepartment(request, department);
+    if (string.IsNullOrWhiteSpace(requested))
+    {
+        return Results.BadRequest(new { error = "department is required." });
+    }
+
+    var resolvedDepartment = ResolveDepartmentDirectory(rootPath, requested);
+    if (resolvedDepartment is null)
+    {
+        return Results.NotFound(new { error = "Department folder not found.", department = requested });
+    }
+
+    var departmentName = resolvedDepartment.Value.Name;
+    var departmentPath = resolvedDepartment.Value.Path;
+    var userGroups = string.IsNullOrWhiteSpace(username) ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : GetUserLocalGroups(username);
+    var expectedGroup = GetDepartmentUsersGroupName(departmentName);
+    var hasAccess = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
+    if (!hasAccess)
+    {
+        var aclAllowed = GetBasicPermissions(departmentPath, username, userGroups).canView;
+        if (!aclAllowed) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    var form = await request.ReadFormAsync();
+    var file = form.Files["file"] ?? form.Files.FirstOrDefault();
+    if (file is null || file.Length == 0)
+    {
+        return Results.BadRequest(new { error = "file is required." });
+    }
+
+    var requestedProject = (project ?? form["project"].FirstOrDefault() ?? "General").Trim();
+    var isGeneral = string.Equals(requestedProject, "General", StringComparison.OrdinalIgnoreCase);
+    var safeProject = string.Concat(requestedProject.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
+    var safeName = string.Concat((form["name"].FirstOrDefault() ?? file.FileName ?? "").Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
+    if (string.IsNullOrWhiteSpace(safeName))
+    {
+        safeName = $"upload-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.bin";
+    }
+
+    var targetDir = isGeneral ? departmentPath : Path.Combine(departmentPath, safeProject);
+    if (!IsPathUnderRoot(departmentPath, targetDir))
+    {
+        return Results.BadRequest(new { error = "Invalid upload path." });
+    }
+
+    try
+    {
+        if (!isGeneral)
+        {
+            Directory.CreateDirectory(targetDir);
+        }
+
+        var canEditTarget = GetBasicPermissions(targetDir, username, userGroups).canEdit;
+        if (!canEditTarget)
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var targetPath = Path.GetFullPath(Path.Combine(targetDir, safeName));
+        if (!IsPathUnderRoot(departmentPath, targetPath))
+        {
+            return Results.BadRequest(new { error = "Invalid upload file path." });
+        }
+
+        await using var stream = File.Create(targetPath);
+        await file.CopyToAsync(stream);
+
+        var relative = Path.GetRelativePath(departmentPath, targetPath).Replace('\\', '/');
+        var finalProject = GetProjectName(departmentPath, targetPath);
+
+        return Results.Ok(new
+        {
+            ok = true,
+            file = new
+            {
+                id = relative,
+                name = Path.GetFileName(targetPath),
+                folder = finalProject,
+                path = targetPath,
+                size = new FileInfo(targetPath).Length,
+                lastModified = File.GetLastWriteTimeUtc(targetPath),
+                access = GetBasicPermissions(targetPath, username, userGroups)
+            }
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+    }
 });
 
 app.MapGet("/api/files/content/{*fileId}", (HttpRequest request, string fileId, string? department, string? username, IConfiguration config) =>
@@ -543,7 +650,8 @@ app.MapGet("/api/files/content/{*fileId}", (HttpRequest request, string fileId, 
     var hasAccess = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
     if (!hasAccess)
     {
-        return Results.StatusCode(StatusCodes.Status403Forbidden);
+        var aclAllowed = GetBasicPermissions(departmentPath, username, userGroups).canView;
+        if (!aclAllowed) return Results.StatusCode(StatusCodes.Status403Forbidden);
     }
 
     var relativeFileId = (fileId ?? "").Trim().Replace('/', Path.DirectorySeparatorChar);
@@ -611,7 +719,8 @@ app.MapGet("/api/files/download/{*fileId}", (HttpRequest request, string fileId,
     var hasAccess = userGroups.Count == 0 || UserHasAdministrativeAccess(userGroups) || userGroups.Contains(expectedGroup);
     if (!hasAccess)
     {
-        return Results.StatusCode(StatusCodes.Status403Forbidden);
+        var aclAllowed = GetBasicPermissions(departmentPath, username, userGroups).canView;
+        if (!aclAllowed) return Results.StatusCode(StatusCodes.Status403Forbidden);
     }
 
     var relativeFileId = (fileId ?? "").Trim().Replace('/', Path.DirectorySeparatorChar);

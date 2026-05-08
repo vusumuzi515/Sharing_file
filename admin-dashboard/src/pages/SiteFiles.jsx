@@ -51,7 +51,6 @@ function getFileIcon(fileType) {
   return '📎';
 }
 
-
 export default function SiteFiles() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthSync();

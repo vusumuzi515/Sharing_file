@@ -14,7 +14,7 @@ import { useAuthSync } from '../hooks/useAuthSync';
 import { useIsAdmin } from '../hooks/useIsAdmin';
 
 const baseMenu = [
-  { path: '/dashboard', label: 'File Portal', Icon: IconHome, requireAuth: false },
+  { path: '/dashboard', label: 'Domain Portal', Icon: IconHome, requireAuth: false },
   { path: '/admin-sign-in', label: 'Administrator', Icon: IconPermission, requireAuth: false, adminEntry: true },
   { path: '/site-files', label: 'Department', Icon: IconFolder, requireAuth: false },
 ];
@@ -68,7 +68,7 @@ export default function Sidebar({ isOpen, onClose }) {
           </div>
           <div>
             <p className="font-semibold tracking-wide text-white">Inyatsi</p>
-            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">File Portal</p>
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">Domain Portal</p>
           </div>
         </div>
 

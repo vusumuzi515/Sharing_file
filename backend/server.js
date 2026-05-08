@@ -37,6 +37,12 @@ const REMOTE_FILES_PATHS = String(
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+const REMOTE_UPLOAD_PATHS = String(
+  process.env.REMOTE_UPLOAD_PATHS || '/api/files/upload,/api/upload',
+)
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 /** When set, sent as `x-org-id` on remote API calls (required by some routes e.g. GET /api/files). */
 const REMOTE_X_ORG_ID = String(process.env.REMOTE_X_ORG_ID || '').trim();
 /** inyatsi-secure-access-api requires this on GET /api/departments and related routes. */
@@ -585,6 +591,62 @@ async function fetchRemoteFileDownloadStream(bearerToken, orgId, serverFileId) {
     }
   }
   return null;
+}
+
+async function uploadRemoteFileViaBridge(req, { departmentId, project, fileName, fileBuffer, mimeType }) {
+  if (!EXTERNAL_AUTH_URL || !departmentId || !fileBuffer) return null;
+  const base = EXTERNAL_AUTH_URL.trim().replace(/\/+$/, '');
+  const bearerToken = getEffectiveRemoteBearer(req);
+  const usernames = getRemoteUsernamesToTry(bearerToken, req?.user);
+  const usernameList = usernames.length ? usernames : [''];
+  const pathsToTry = [...REMOTE_UPLOAD_PATHS];
+  const attempts = [];
+
+  for (const p of pathsToTry) {
+    for (const username of usernameList) {
+      const hasQ = p.includes('?');
+      const qp = [];
+      qp.push(`department=${encodeURIComponent(departmentId)}`);
+      qp.push(`project=${encodeURIComponent(project || 'General')}`);
+      if (username) qp.push(`username=${encodeURIComponent(username)}`);
+      const url = `${base}${p}${hasQ ? '&' : '?'}${qp.join('&')}`;
+      try {
+        const form = new FormData();
+        const blob = new Blob([fileBuffer], { type: mimeType || 'application/octet-stream' });
+        form.append('file', blob, fileName || 'upload.bin');
+        form.append('department', departmentId);
+        form.append('project', project || 'General');
+        if (fileName) form.append('name', fileName);
+        if (username) form.append('username', username);
+
+        const headers = remoteApiHeaders();
+        if (bearerToken && !p.includes('/api/external/dashboard/')) {
+          headers.Authorization = `Bearer ${bearerToken}`;
+          headers['x-org-id'] = String(departmentId);
+        }
+        const res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: form,
+        });
+        if (res.ok) {
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            data = null;
+          }
+          return { ok: true, data };
+        }
+        const txt = await res.text().catch(() => '');
+        attempts.push(`${res.status} ${url} ${txt.slice(0, 120)}`);
+      } catch (err) {
+        attempts.push(`ERR ${url} ${(err?.message || err).toString().slice(0, 120)}`);
+      }
+    }
+  }
+
+  return { ok: false, error: attempts[0] || 'Remote upload failed.' };
 }
 
 async function getCachedRemoteFiles(bearerToken, orgId, forceRefresh = false, reqUser = null) {
@@ -1609,18 +1671,19 @@ async function assertProjectUploadAllowed(req, department, project) {
       remoteRows = [];
     }
   }
-  const inheritFromFileServer = trustFileServerAcl() && remoteRows.length > 0;
-  const deptPerm = inheritFromFileServer
-    ? 'edit'
-    : isDepartmentViewOnly(department)
-      ? 'view'
-      : 'edit';
+  const inheritFromFileServer = trustFileServerAcl();
+  // In ACL-trust mode, ignore portal role gating but still respect department ACL from file server.
+  const deptPerm = isDepartmentViewOnly(department) ? 'view' : 'edit';
   const folderPermission = folderPermissionFromRemote(project, remoteRows, deptPerm);
   const folderCanEdit = folderPermission === 'edit' && !restricted;
   if (inheritFromFileServer) {
-    return deptHasAccess && folderCanEdit
-      ? { ok: true }
-      : { ok: false, reason: 'Upload is not allowed in this folder.' };
+    if (!deptHasAccess || restricted) {
+      return { ok: false, reason: 'Upload is not allowed in this folder.' };
+    }
+    // If remote rows do not include this folder yet (e.g., empty folder),
+    // only allow upload when department root ACL is editable.
+    if (!remoteRows.length) return deptPerm === 'edit' ? { ok: true } : { ok: false, reason: 'Upload is not allowed in this folder.' };
+    return folderCanEdit ? { ok: true } : { ok: false, reason: 'Upload is not allowed in this folder.' };
   }
   const canEdit = folderRowCanEditForUser(
     deptHasAccess,
@@ -1632,6 +1695,30 @@ async function assertProjectUploadAllowed(req, department, project) {
     restricted,
   );
   return canEdit ? { ok: true } : { ok: false, reason: 'Upload is not allowed in this folder.' };
+}
+
+async function getRemoteProjectAcl(req, department, project = 'General') {
+  const bearer = getEffectiveRemoteBearer(req);
+  if (!EXTERNAL_AUTH_URL || !bearer || !department?.id) return null;
+  let remoteRows = [];
+  try {
+    remoteRows = await getCachedRemoteFiles(bearer, department.id, false, req?.user);
+  } catch {
+    remoteRows = [];
+  }
+  if (!Array.isArray(remoteRows) || remoteRows.length === 0) return null;
+
+  const p = String(project || 'General').trim() || 'General';
+  const folderPermission = folderPermissionFromRemote(p, remoteRows, 'view');
+  const canView = folderPermission === 'view' || folderPermission === 'edit';
+  const canEdit = folderPermission === 'edit';
+  return {
+    read: canView,
+    write: canEdit,
+    delete: canEdit,
+    source: 'file-server-acl',
+    project: p,
+  };
 }
 
 function folderPathToFsRelative(folderPath) {
@@ -1660,7 +1747,11 @@ function folderPathToFsRelative(folderPath) {
 function withinRoot(absolutePath) {
   const normalizedRoot = path.resolve(FILE_SERVER_ROOT);
   const normalizedTarget = path.resolve(absolutePath);
-  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}${path.sep}`);
+  const relative = path.relative(normalizedRoot, normalizedTarget);
+  return (
+    relative === '' ||
+    (!relative.startsWith('..') && !path.isAbsolute(relative))
+  );
 }
 
 async function readUsersJson() {
@@ -2834,12 +2925,8 @@ app.get('/api/departments', async (req, res) => {
           .sort((a, b) => a.localeCompare(b))
           .map((n) => ({ id: n, name: n }));
       }
-      const inheritFromFileServer = trustFileServerAcl() && remoteRows.length > 0;
-      const deptPermForFolders = inheritFromFileServer
-        ? 'edit'
-        : isDepartmentViewOnly(d)
-          ? 'view'
-          : 'edit';
+      const inheritFromFileServer = trustFileServerAcl();
+      const deptPermForFolders = isDepartmentViewOnly(d) ? 'view' : 'edit';
       const effectivePortalViewOnly = inheritFromFileServer ? false : portalViewOnly;
       const folders = rawFolders.map((f) => {
         const restricted = RESTRICTED_PROJECTS.has((f.name || '').toLowerCase());
@@ -3025,12 +3112,8 @@ app.get('/api/projects', authRequired, async (req, res) => {
       .map((n) => ({ id: n, name: n }));
   }
   /** When the bridge returns file rows, subfolder edit/view and upload follow NTFS/bridge only. */
-  const inheritFromFileServer = trustFileServerAcl() && remoteRows.length > 0;
-  const deptPermForFolders = inheritFromFileServer
-    ? 'edit'
-    : isDepartmentViewOnly(department)
-      ? 'view'
-      : 'edit';
+  const inheritFromFileServer = trustFileServerAcl();
+  const deptPermForFolders = isDepartmentViewOnly(department) ? 'view' : 'edit';
   const effectivePortalViewOnly = inheritFromFileServer ? false : portalViewOnly;
   const projects = raw.map((p) => {
     const restricted = RESTRICTED_PROJECTS.has((p.name || '').toLowerCase());
@@ -3072,6 +3155,8 @@ app.post('/api/upload', authRequired, upload.single('file'), async (req, res) =>
   /** Driven by inyatsi-config.json portal.uploadFileNaming or PORTAL_UPLOAD_FILE_NAMING — not the web UI. */
   const replaceExisting = naming === 'preserve-name';
   const project = sanitizeSegment(req.body?.project || 'General');
+  const writesToDeptRoot = String(project || '').toLowerCase() === 'general';
+  const projectPathSegment = writesToDeptRoot ? '' : project;
   const projectAccess = await assertProjectUploadAllowed(req, department, project);
   if (!projectAccess.ok) {
     return res.status(403).json({ error: projectAccess.reason || 'Upload is not allowed in this folder.' });
@@ -3083,9 +3168,65 @@ app.post('/api/upload', authRequired, upload.single('file'), async (req, res) =>
   const storedName = replaceExisting ? fileNameRaw : `${Date.now()}-${fileNameRaw}`;
   let fileId = '';
 
+  // In external bridge mode, prefer upload on the bridge host (where NTFS ACLs are authoritative).
+  if (EXTERNAL_AUTH_URL && trustAcl && !getWebdavClient()) {
+    const remoteUpload = await uploadRemoteFileViaBridge(req, {
+      departmentId: department.id,
+      project,
+      fileName: storedName,
+      fileBuffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+    });
+    if (remoteUpload?.ok) {
+      const remoteFileId = remoteUpload?.data?.file?.id;
+      fileId = remoteFileId
+        ? encodeFileId(buildRemoteVirtualPath(department.id, remoteUpload?.data?.file?.folder || project, storedName))
+        : encodeFileId(buildRemoteVirtualPath(department.id, project, storedName));
+      addActivity(
+        {
+          employeeId: req.user?.employeeId || 'unknown',
+          visitorName: req.user?.name || req.user?.employeeId,
+          departmentId: department.id,
+          department: department.label,
+          project: remoteUpload?.data?.file?.folder || project,
+          action: replaceExisting ? 'updated' : 'uploaded',
+          fileName: storedName,
+          fileId,
+        },
+        req,
+      );
+      clearRemoteFileCaches();
+      const statusCode = replaceExisting ? 200 : 201;
+      return res.status(statusCode).json({
+        ok: true,
+        replaced: replaceExisting,
+        file: {
+          id: fileId,
+          name: storedName,
+          department: department.label,
+          departmentId: department.id,
+          folderPath: department.folderPath,
+          project: remoteUpload?.data?.file?.folder || project,
+          size: req.file.size,
+          uploadedAt: new Date().toISOString(),
+        },
+      });
+    }
+    // In remote-departments mode, local UNC write may be unavailable on this API host.
+    // If bridge upload is not supported/reachable, fail with a clear actionable error.
+    if (REMOTE_DEPARTMENTS_ONLY) {
+      const reason = remoteUpload?.error || 'Remote upload endpoint unavailable.';
+      return res.status(502).json({
+        error:
+          'Remote bridge upload is unavailable. Update/restart windows-bridge-api with /api/files/upload support.',
+        reason,
+      });
+    }
+  }
+
   if (getWebdavClient()) {
-    const targetPath = joinWebDav(department.folderPath, project, storedName);
-    const targetDir = joinWebDav(department.folderPath, project);
+    const targetPath = joinWebDav(department.folderPath, projectPathSegment, storedName);
+    const targetDir = joinWebDav(department.folderPath, projectPathSegment);
 
     await fs.mkdir(path.join(TEMP_UPLOAD_ROOT, department.id, project), { recursive: true });
     const tempPath = path.join(TEMP_UPLOAD_ROOT, department.id, project, storedName);
@@ -3125,13 +3266,53 @@ app.post('/api/upload', authRequired, upload.single('file'), async (req, res) =>
       req,
     );
   } else {
-    const targetDir = path.join(FILE_SERVER_ROOT, folderPathToFsRelative(department.folderPath), project);
-    const targetPath = path.join(targetDir, storedName);
+    let relativeDeptPath = folderPathToFsRelative(department.folderPath);
+    let targetDir = path.join(FILE_SERVER_ROOT, relativeDeptPath, projectPathSegment);
+    let targetPath = path.join(targetDir, storedName);
+    if (!withinRoot(targetDir) || !withinRoot(targetPath)) {
+      // Some bridge payloads send absolute source paths (e.g. /D:/.../mining).
+      // Fall back to the department id under FILE_SERVER_ROOT for local writes.
+      const deptFallback = sanitizeSegment(department.id || '');
+      if (deptFallback) {
+        relativeDeptPath = deptFallback;
+        targetDir = path.join(FILE_SERVER_ROOT, relativeDeptPath, projectPathSegment);
+        targetPath = path.join(targetDir, storedName);
+      }
+    }
     if (!withinRoot(targetDir) || !withinRoot(targetPath)) {
       return res.status(400).json({ error: 'Invalid upload path' });
     }
-    await fs.mkdir(targetDir, { recursive: true });
-    await fs.writeFile(targetPath, req.file.buffer);
+    try {
+      // "General" maps to department root; avoid unnecessary mkdir on strict UNC shares.
+      if (!writesToDeptRoot) {
+        await fs.mkdir(targetDir, { recursive: true });
+      }
+      await fs.writeFile(targetPath, req.file.buffer);
+    } catch (err) {
+      // UNC shares can deny creating "General" while still allowing writes in department root.
+      // In that case, retry once at root to keep uploads aligned with file-server ACL behavior.
+      const isGeneralProject = String(project || '').toLowerCase() === 'general';
+      if (isGeneralProject) {
+        const fallbackDir = path.join(FILE_SERVER_ROOT, relativeDeptPath);
+        const fallbackPath = path.join(fallbackDir, storedName);
+        if (withinRoot(fallbackDir) && withinRoot(fallbackPath)) {
+          try {
+            await fs.writeFile(fallbackPath, req.file.buffer);
+            targetDir = fallbackDir;
+            targetPath = fallbackPath;
+          } catch {
+            const message = err?.message || 'Could not write to file server path.';
+            return res.status(500).json({ error: message });
+          }
+        } else {
+          const message = err?.message || 'Could not write to file server path.';
+          return res.status(500).json({ error: message });
+        }
+      } else {
+        const message = err?.message || 'Could not write to file server path.';
+        return res.status(500).json({ error: message });
+      }
+    }
     fileId = encodeFileId(path.relative(FILE_SERVER_ROOT, targetPath));
 
     addActivity(
@@ -3567,15 +3748,45 @@ app.get('/api/me/session', authRequired, async (req, res) => {
  * Effective rights for a path (same rules as upload/delete guards).
  * When FastAPI is not used, Node derives flags from JWT permission.
  */
-app.get('/api/permissions', authRequired, (req, res) => {
+app.get('/api/permissions', authRequired, async (req, res) => {
   const p = String(req.query.path || '').trim();
   if (!p) return res.status(400).json({ error: 'path is required' });
+
+  // When connected to external bridge ACL, derive effective rights from file-server rows.
+  if (trustFileServerAcl()) {
+    const requestedDept = String(req.query.department || '').trim().toLowerCase();
+    const requestedProject = String(req.query.project || '').trim();
+    let department = null;
+    try {
+      department = await getDepartmentContext(req, '', requestedDept);
+    } catch {
+      department = null;
+    }
+
+    if (department?.id) {
+      const acl = await getRemoteProjectAcl(req, department, requestedProject || 'General');
+      if (acl) {
+        return res.json({
+          path: p,
+          read: acl.read,
+          write: acl.write,
+          delete: acl.delete,
+          source: acl.source,
+          departmentId: department.id,
+          project: acl.project,
+        });
+      }
+    }
+  }
+
+  // Fallback: portal session capability model.
   const caps = capabilitiesFromPermission(req);
   return res.json({
     path: p,
     read: caps.read,
     write: caps.upload,
     delete: caps.delete,
+    source: 'portal-session',
   });
 });
 

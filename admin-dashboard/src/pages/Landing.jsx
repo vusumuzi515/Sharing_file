@@ -81,7 +81,7 @@ export default function Landing() {
               to="/dashboard"
               className="mt-12 inline-flex min-h-[52px] w-full max-w-[280px] shrink-0 items-center justify-center rounded-full bg-zinc-950 px-12 text-[12px] font-semibold uppercase tracking-[0.14em] text-white shadow-lg shadow-zinc-900/25 outline-none ring-offset-2 ring-offset-white transition hover:bg-black focus-visible:ring-2 focus-visible:ring-zinc-900 active:scale-[0.99] sm:mt-16 sm:w-auto md:mt-20"
             >
-              Enter file portal
+              Enter Inyatsi Domain Portal
             </Link>
           </div>
         </section>

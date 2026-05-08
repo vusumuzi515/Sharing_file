@@ -4,6 +4,9 @@ import { getDownloadUrl, getPreviewUrl } from '../services/monitoringApi';
 
 const IMAGE_TYPES = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']);
 const IFRAME_TYPES = new Set(['pdf', 'txt', 'text', 'csv', 'json']);
+const WORD_TYPES = new Set(['doc', 'docx', 'rtf']);
+const EXCEL_TYPES = new Set(['xls', 'xlsx', 'xlsm', 'csv']);
+const POWERPOINT_TYPES = new Set(['ppt', 'pptx']);
 
 function getExtension(name, fileType) {
   const fromType = String(fileType || '').trim().toLowerCase();
@@ -11,6 +14,21 @@ function getExtension(name, fileType) {
   const fileName = String(name || '').trim().toLowerCase();
   const parts = fileName.split('.');
   return parts.length > 1 ? parts.pop() || '' : '';
+}
+
+function getOpenWithLinks(ext, fileUrl) {
+  if (!fileUrl) return [];
+  const links = [];
+  if (WORD_TYPES.has(ext)) {
+    links.push({ label: 'Open in Microsoft Word', href: `ms-word:ofe|u|${fileUrl}` });
+  }
+  if (EXCEL_TYPES.has(ext)) {
+    links.push({ label: 'Open in Microsoft Excel', href: `ms-excel:ofe|u|${fileUrl}` });
+  }
+  if (POWERPOINT_TYPES.has(ext)) {
+    links.push({ label: 'Open in Microsoft PowerPoint', href: `ms-powerpoint:ofe|u|${fileUrl}` });
+  }
+  return links;
 }
 
 export default function FilePreview() {
@@ -25,6 +43,7 @@ export default function FilePreview() {
   const downloadUrl = fileId ? getDownloadUrl(fileId) : '';
   const isImage = IMAGE_TYPES.has(ext);
   const isFramePreview = IFRAME_TYPES.has(ext);
+  const openWithLinks = useMemo(() => getOpenWithLinks(ext, downloadUrl), [ext, downloadUrl]);
 
   return (
     <div className="space-y-4">
@@ -55,8 +74,21 @@ export default function FilePreview() {
           <iframe src={previewUrl} title={name} className="h-[78vh] w-full border-0" />
         </div>
       ) : (
-        <div className="card rounded-2xl p-8 text-center text-sm text-slate-500">
-          Preview not available for this file.
+        <div className="card space-y-4 rounded-2xl p-8 text-center">
+          <p className="text-sm text-slate-500">Preview not available for this file.</p>
+          {openWithLinks.length ? (
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {openWithLinks.map((item) => (
+                <a key={item.label} href={item.href} className="btn btn-secondary">
+                  {item.label}
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">
+              Use the Download button to open this file in your desktop application.
+            </p>
+          )}
         </div>
       )}
     </div>
