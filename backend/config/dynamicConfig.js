@@ -146,18 +146,31 @@ function mergeUsers(usersJson, configUsers) {
   const byId = new Map();
   (usersJson || []).forEach((u) => {
     const perm = u.permission === 'view' ? 'view' : (u.permission || 'edit');
-    byId.set(String(u.employeeId || '').toLowerCase(), { ...u, permission: perm });
+    const key = String(u.employeeId || u.userId || '').toLowerCase();
+    if (!key) return;
+    byId.set(key, { ...u, permission: perm, employeeId: u.employeeId || u.userId });
   });
   (configUsers || []).forEach((c) => {
     const key = String(c.employeeId || c.userId || '').toLowerCase();
-    const existing = byId.get(key);
-    if (key && existing) {
-      byId.set(key, {
-        ...existing,
-        departmentId: c.departmentId ?? c.department ?? existing.departmentId,
-        permission: c.permission === 'view' ? 'view' : (existing.permission || 'edit'),
-      });
-    }
+    if (!key) return;
+    const existing = byId.get(key) || {};
+    const permission =
+      c.permission === 'view'
+        ? 'view'
+        : existing.permission === 'view'
+          ? 'view'
+          : (existing.permission || c.permission || 'edit');
+    byId.set(key, {
+      ...existing,
+      // Preserve a local password if present; file-server config entries can be password-less.
+      ...(existing.password ? { password: existing.password } : {}),
+      employeeId: existing.employeeId || c.employeeId || c.userId,
+      name: existing.name || c.name || c.displayName || c.employeeId || c.userId,
+      role: existing.role || c.role || 'Engineer',
+      departmentId: c.departmentId ?? c.department ?? existing.departmentId,
+      permission,
+      inheritedFromFileServer: !existing.employeeId,
+    });
   });
   return Array.from(byId.values());
 }

@@ -74,6 +74,14 @@ const FILE_SERVER_ROOT = path.resolve(process.env.FILE_SERVER_ROOT || path.join(
 const TEMP_UPLOAD_ROOT = path.resolve(process.env.TEMP_UPLOAD_ROOT || path.join(__dirname, 'temp-uploads'));
 const USERS_PATH = path.resolve(process.env.USERS_FILE || path.join(__dirname, 'config', 'users.json'));
 const ADMIN_CONFIG_PATH = path.resolve(process.env.ADMIN_CONFIG || path.join(__dirname, 'config', 'admin-config.json'));
+const LANDING_CONTENT_PATH = path.resolve(
+  process.env.LANDING_CONTENT_PATH || path.join(__dirname, 'config', 'landing-content.json'),
+);
+const DEFAULT_LANDING_CONTENT = {
+  slogan: "Africa's leading integrated business partner",
+  principle: 'Zero Tolerance',
+  coreValues: ['Accountability', 'Agility', 'Commitment', 'Embrace Change', 'Teamwork', 'Tempo'],
+};
 const NEXTCLOUD_CONFIG_PATH = path.resolve(process.env.NEXTCLOUD_CONFIG || path.join(__dirname, 'config', 'nextcloud-config.json'));
 const ACTIVITY_LOG_PATH = path.resolve(process.env.ACTIVITY_LOG_PATH || path.join(__dirname, 'data', 'activity-log.json'));
 const ACTIVITY_LOG_MAX = Math.min(5000, Math.max(100, Number(process.env.ACTIVITY_LOG_MAX || 2000)));
@@ -111,93 +119,326 @@ function hasSavedNextcloudFileConfig() {
   return false;
 }
 
-/** Optional: validate credentials against external file server /api/auth/login (e.g. loca.lt tunnel). */
-async function verifyExternalAuth(employeeId, password, departmentId = '') {
-  if (!EXTERNAL_AUTH_URL) return null;
-  const url = `${EXTERNAL_AUTH_URL}/api/auth/login`;
-  const dept = String(departmentId || '').trim().toLowerCase();
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...remoteApiHeaders(),
-      },
-      body: JSON.stringify({
-        username: employeeId,
-        employeeId,
-        password,
-        ...(dept ? { departmentId: dept } : {}),
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      const remoteAccessToken =
-        data.accessToken ||
-        data.token ||
-        data.access_token ||
-        data.data?.accessToken ||
-        data.data?.token ||
-        null;
-      return {
-        ok: true,
-        user: data?.user ?? data?.data?.user ?? data?.data ?? data,
-        remoteAccessToken,
-        departmentsFromAuth: extractDepartmentsFromAuthLoginPayload(data),
-      };
-    }
-    return { ok: false, error: data?.message ?? data?.error ?? `Auth failed: ${res.status}` };
-  } catch (err) {
-    return { ok: false, error: err?.message ?? 'Could not reach auth server' };
-  }
+/** Optional: validate credentials against external file server auth endpoints. */
+function toDepartmentLabelFromId(departmentId) {
+  const raw = String(departmentId || '').trim();
+  if (!raw) return '';
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}` : ''))
+    .join(' ');
 }
 
-/** Ping remote file/auth API /health (same host as EXTERNAL_AUTH_URL). */
-async function fetchRemoteAuthServerHealth() {
-  const base = EXTERNAL_AUTH_URL.trim();
+function buildExternalAuthPayloadVariants(employeeId, password, departmentId = '') {
+  const base = {
+    username: employeeId,
+    employeeId,
+    password,
+  };
+  const raw = String(departmentId || '').trim();
+  const variants = [];
+  const seen = new Set();
+  const push = (extra) => {
+    const payload = { ...base, ...(extra || {}) };
+    const key = JSON.stringify(payload);
+    if (seen.has(key)) return;
+    seen.add(key);
+    variants.push(payload);
+  };
+  if (raw) {
+    const lower = raw.toLowerCase();
+    const label = toDepartmentLabelFromId(raw);
+    // Bridge deployments differ on expected key/value; try common variants before fallback.
+    push({ departmentId: raw });
+    push({ departmentId: lower });
+    push({ department: raw });
+    push({ department: lower });
+    if (label) {
+      push({ departmentId: label });
+      push({ department: label });
+    }
+  }
+  // Last fallback: auth-only validation without department field.
+  push({});
+  return variants;
+}
+
+async function verifyExternalAuth(employeeId, password, departmentId = '') {
+  if (!EXTERNAL_AUTH_URL) return null;
+  const base = EXTERNAL_AUTH_URL.trim().replace(/\/+$/, '');
+  const authPaths = [
+    '/api/auth/login',
+    '/api/login',
+    '/api/external/auth/login',
+  ];
+  const payloadVariants = buildExternalAuthPayloadVariants(employeeId, password, departmentId);
+  let lastError = null;
+  for (const path of authPaths) {
+    for (const candidateBase of [base, /^https:/i.test(base) ? base.replace(/^https:/i, 'http:') : null]) {
+      if (!candidateBase) continue;
+      for (const payload of payloadVariants) {
+        try {
+          const res = await fetch(`${candidateBase}${path}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...remoteApiHeaders(),
+            },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(15000),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            const remoteAccessToken =
+              data.accessToken ||
+              data.token ||
+              data.access_token ||
+              data.data?.accessToken ||
+              data.data?.token ||
+              null;
+            return {
+              ok: true,
+              user: data?.user ?? data?.data?.user ?? data?.data ?? data,
+              remoteAccessToken,
+              departmentsFromAuth: extractDepartmentsFromAuthLoginPayload(data),
+            };
+          }
+          // Keep trying alternate payloads/endpoints; keep last auth error for UI.
+          if (res.status === 401 || res.status === 403) {
+            lastError = data?.message ?? data?.error ?? `Auth failed: ${res.status}`;
+            continue;
+          }
+          lastError = data?.message ?? data?.error ?? `Auth failed: ${res.status}`;
+        } catch (err) {
+          lastError = err?.message ?? 'Could not reach auth server';
+        }
+      }
+    }
+  }
+  return { ok: false, error: lastError || 'Could not reach auth server' };
+}
+
+/** Single GET /api/test-root against the bridge base URL (no trailing slash). */
+async function fetchBridgeTestRootOnce(baseUrl, headers, timeoutMs) {
+  const res = await fetch(`${baseUrl}/api/test-root`, {
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const text = await res.text();
+  return { res, text };
+}
+
+/** If ngrok returns 3200 on https://, retry once with http:// same host (common free-tier behaviour). */
+async function fetchBridgeTestRootWithNgrokSchemeFallback(base, headers, timeoutMs) {
+  const trimmed = base.trim().replace(/\/+$/, '');
+  let { res, text } = await fetchBridgeTestRootOnce(trimmed, headers, timeoutMs);
+  if (/ERR_NGROK_3200/i.test(text) && /^https:/i.test(trimmed)) {
+    const alt = trimmed.replace(/^https:/i, 'http:');
+    try {
+      const second = await fetchBridgeTestRootOnce(alt, headers, timeoutMs);
+      if (!/ERR_NGROK_3200/i.test(second.text)) {
+        ({ res, text } = second);
+      }
+    } catch {
+      /* keep first response */
+    }
+  }
+  return { res, text };
+}
+
+/**
+ * If /api/test-root is absent or returns HTML, detect windows-bridge-api via GET /api/departments
+ * (same route Node uses for REMOTE_DEPARTMENTS_ONLY).
+ */
+async function probeBridgeHealthViaDepartments(base, headers, timeoutMs) {
+  const trimmed = base.trim().replace(/\/+$/, '');
+  const run = async (root) => {
+    const res = await fetch(`${root}/api/departments`, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const text = await res.text();
+    return { res, text };
+  };
+  let { res, text } = await run(trimmed);
+  if (/ERR_NGROK_3200/i.test(text) && /^https:/i.test(trimmed)) {
+    try {
+      const second = await run(trimmed.replace(/^https:/i, 'http:'));
+      if (!/ERR_NGROK_3200/i.test(second.text)) ({ res, text } = second);
+    } catch {
+      /* keep first response */
+    }
+  }
+  const ngrok = text.match(/ERR_NGROK_(\d+)/i);
+  if (ngrok) return { kind: 'ngrok', code: ngrok[1], status: res.status, text };
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!json || typeof json !== 'object') return null;
+  if (res.ok && Array.isArray(json.departments)) {
+    return {
+      kind: 'bridge',
+      status: res.status,
+      exists: true,
+      rootPath: json.rootPath || null,
+      probe: '/api/departments',
+    };
+  }
+  if (res.status === 400 && json.error) {
+    return {
+      kind: 'bridge',
+      status: res.status,
+      exists: false,
+      rootPath: null,
+      probe: '/api/departments',
+      detail: String(json.error),
+    };
+  }
+  if (res.status === 404 && json.error) {
+    return {
+      kind: 'bridge',
+      status: res.status,
+      exists: false,
+      rootPath: json.rootPath || null,
+      probe: '/api/departments',
+      detail: String(json.error),
+    };
+  }
+  return null;
+}
+
+/** Ping Windows bridge at EXTERNAL_AUTH_URL via GET /api/test-root (bridge has no /health). */
+async function fetchRemoteAuthServerHealth(opts = {}) {
+  const timeoutMs =
+    Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 15000;
+  const base = EXTERNAL_AUTH_URL.trim().replace(/\/+$/, '');
   if (!base) {
     return { configured: false };
   }
-  const headers = remoteApiHeaders();
+  const headers = {
+    ...remoteApiHeaders(),
+    ...(REMOTE_API_BEARER_TOKEN ? { Authorization: `Bearer ${REMOTE_API_BEARER_TOKEN}` } : {}),
+  };
   try {
-    const res = await fetch(`${base}/health`, {
+    let { res, text } = await fetchBridgeTestRootWithNgrokSchemeFallback(
+      base,
       headers,
-      signal: AbortSignal.timeout(15000),
+      timeoutMs,
+    );
+    const ngrokByCode = {
+      '3004':
+        'Ngrok ERR_NGROK_3004: tunnel upstream returned invalid HTTP. On the file-server PC run `ngrok http 5200` (HTTP only), not https://localhost — then restart the Windows bridge on http://0.0.0.0:5200.',
+      '3200':
+        'Ngrok tunnel offline (ERR_NGROK_3200). On the file-server PC keep `ngrok http 5200` running. Copy the Forwarding URL exactly (often http://…ngrok-free.app); put it in EXTERNAL_AUTH_URL in backend/.env — if https fails, use http — then restart Node.',
+    };
+    const ngrokHealthReturn = (code, status, probePath = '/api/test-root') => ({
+      configured: true,
+      reachable: false,
+      status,
+      probe: probePath,
+      error:
+        ngrokByCode[code] ||
+        `Ngrok gateway error ERR_NGROK_${code}. Fix tunnel or bridge on the file-server PC.`,
     });
-    const text = await res.text();
+
+    const bridgeOkFromDeptProbe = (probe) => ({
+      configured: true,
+      reachable: true,
+      status: probe.status,
+      probe: probe.probe,
+      exists: probe.exists,
+      rootPath: probe.rootPath || null,
+      service: 'windows-bridge',
+      statusText: probe.exists ? 'root_ok' : 'root_missing',
+      error: probe.exists
+        ? null
+        : probe.detail ||
+          'Bridge is reachable but departments root folder does not exist. Set FileServer:RootPath on the bridge PC to the folder that contains department subfolders.',
+    });
+
+    const ngrok = text.match(/ERR_NGROK_(\d+)/i);
+    if (ngrok) {
+      return ngrokHealthReturn(ngrok[1], res.status);
+    }
+    if (!res.ok) {
+      const deptProbe = await probeBridgeHealthViaDepartments(base, headers, timeoutMs);
+      if (deptProbe?.kind === 'bridge') return bridgeOkFromDeptProbe(deptProbe);
+      if (deptProbe?.kind === 'ngrok') return ngrokHealthReturn(deptProbe.code, deptProbe.status, '/api/departments');
+      const stripped = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      let errMsg = stripped.slice(0, 220) || `HTTP ${res.status} from bridge /api/test-root`;
+      if (res.status === 404) {
+        errMsg +=
+          ' — Wrong app on port 5200 or old bridge build. On his PC run windows-bridge-api from your repo; http://127.0.0.1:5200/ must show "inyatsi-windows-bridge-api OK" and /api/test-root or /api/departments must respond.';
+      }
+      return {
+        configured: true,
+        reachable: false,
+        status: res.status,
+        probe: '/api/test-root',
+        error: errMsg.slice(0, 420),
+      };
+    }
     let json = {};
     try {
       json = JSON.parse(text);
     } catch {
-      /* non-JSON */
+      const deptProbe = await probeBridgeHealthViaDepartments(base, headers, timeoutMs);
+      if (deptProbe?.kind === 'bridge') return bridgeOkFromDeptProbe(deptProbe);
+      if (deptProbe?.kind === 'ngrok') return ngrokHealthReturn(deptProbe.code, deptProbe.status, '/api/departments');
+      return {
+        configured: true,
+        reachable: false,
+        status: res.status,
+        probe: '/api/test-root',
+        error: 'Bridge returned non-JSON from /api/test-root',
+      };
     }
+    const exists = Boolean(json.exists);
     return {
       configured: true,
-      reachable: res.ok,
+      reachable: true,
       status: res.status,
-      service: json.service || null,
-      statusText: json.status || null,
-      error: res.ok ? null : text.slice(0, 200),
+      probe: '/api/test-root',
+      exists,
+      rootPath: json.rootPath || null,
+      service: 'windows-bridge',
+      statusText: exists ? 'root_ok' : 'root_missing',
+      error: exists
+        ? null
+        : 'Bridge is reachable but departments root folder does not exist. Set FileServer:RootPath on the bridge PC to the folder that contains department subfolders.',
     };
   } catch (err) {
     const raw = err?.cause?.message || err?.message || String(err || 'Unreachable');
     let hint = String(raw);
     if (/fetch failed|socket|ECONNREFUSED|ECONNRESET|ENOTFOUND|closed|timed out|timeout/i.test(hint)) {
       hint =
-        'Cannot reach remote host (ngrok tunnel stopped, URL changed, or server offline). ' +
+        'Cannot reach remote host (ngrok stopped, EXTERNAL_AUTH_URL wrong, or network/firewall). ' +
         `Details: ${String(raw).slice(0, 120)}`;
     }
     return {
       configured: true,
       reachable: false,
+      probe: '/api/test-root',
       error: hint.slice(0, 280),
     };
   }
 }
 
 const remoteDeptCacheByKey = new Map();
-const REMOTE_DEPT_CACHE_MS = 60 * 1000;
+/** Remote department list TTL; shorter when bridge is the only source so UI tracks new folders sooner. */
+const parsedDeptCacheMs = Number(process.env.REMOTE_DEPT_CACHE_MS);
+const REMOTE_DEPT_CACHE_MS =
+  Number.isFinite(parsedDeptCacheMs) && parsedDeptCacheMs >= 0
+    ? parsedDeptCacheMs
+    : REMOTE_DEPARTMENTS_ONLY
+      ? 8 * 1000
+      : 60 * 1000;
 
 /** Cached GET /api/files per (token prefix, org id) — same ACL as file server. */
 const remoteFileCacheByKey = new Map();
@@ -1983,6 +2224,65 @@ function sanitizeFileServerUrlForClient(baseUrl) {
   }
 }
 
+/** Public: tunnel + Windows bridge reachability (hostname only; no tokens). */
+app.get('/api/bridge-health', async (req, res) => {
+  const quick = String(req.query.quick || '').trim() === '1';
+  const health = await fetchRemoteAuthServerHealth({ timeoutMs: quick ? 5000 : 15000 });
+  const host = EXTERNAL_AUTH_URL
+    ? sanitizeFileServerUrlForClient(EXTERNAL_AUTH_URL.trim().replace(/\/+$/, ''))
+    : '';
+  const hint = health.reachable ? null : health.error || 'Remote bridge not reachable.';
+  return res.json({
+    ...health,
+    host: host || undefined,
+    remoteDepartmentsOnly: REMOTE_DEPARTMENTS_ONLY,
+    hint,
+    updatedAt: new Date().toISOString(),
+  });
+});
+
+/**
+ * Proxies the bridge `GET /api/test-root` through Node.
+ * Lets you open http://localhost:5173/api/test-root (Vite → Node → EXTERNAL_AUTH_URL).
+ * The friend's Windows bridge listens on **5200**. Ngrok must be `ngrok http 5200`, never 5173 (5173 is only this React dev server).
+ */
+app.get('/api/test-root', async (_req, res) => {
+  const base = EXTERNAL_AUTH_URL.trim().replace(/\/+$/, '');
+  if (!base) {
+    return res.status(503).json({
+      error: 'EXTERNAL_AUTH_URL not set',
+      hint: 'Add your friend\'s ngrok Forwarding URL (http or https) to backend .env as EXTERNAL_AUTH_URL and restart Node.',
+    });
+  }
+  const headers = {
+    ...remoteApiHeaders(),
+    ...(REMOTE_API_BEARER_TOKEN ? { Authorization: `Bearer ${REMOTE_API_BEARER_TOKEN}` } : {}),
+  };
+  try {
+    const { res: upstream, text } = await fetchBridgeTestRootWithNgrokSchemeFallback(
+      base,
+      headers,
+      20000,
+    );
+    try {
+      const j = JSON.parse(text);
+      return res.status(upstream.status).json(j);
+    } catch {
+      return res.status(upstream.status).json({
+        error: 'Remote did not return JSON (often an ngrok error page)',
+        hint: 'On the file-server PC run `ngrok http 5200` against the bridge, not port 5173.',
+        status: upstream.status,
+        snippet: text.replace(/<[^>]+>/g, ' ').trim().slice(0, 480),
+      });
+    }
+  } catch (e) {
+    return res.status(502).json({
+      error: e?.message || 'Could not reach remote bridge',
+      hint: 'Tunnel down, wrong EXTERNAL_AUTH_URL, or ngrok pointing at the wrong port (use 5200 for the bridge API).',
+    });
+  }
+});
+
 /** Combined status: WebDAV + local folder (dashboard banner). Any signed-in user may read a safe summary; admins get full detail. */
 app.get('/api/file-server/status', authRequired, async (req, res) => {
   const isAdmin = isAdminUser(req);
@@ -2068,10 +2368,62 @@ async function writeAdminConfig(data) {
   await fs.writeFile(ADMIN_CONFIG_PATH, JSON.stringify(data, null, 2), 'utf8');
 }
 
+function mergeLandingContent(stored) {
+  const d = { ...DEFAULT_LANDING_CONTENT };
+  if (!stored || typeof stored !== 'object') return d;
+  const sloganMerged = typeof stored.slogan === 'string' ? stored.slogan.trim().slice(0, 280) : '';
+  if (sloganMerged) d.slogan = sloganMerged;
+  const principleMerged = typeof stored.principle === 'string' ? stored.principle.trim().slice(0, 120) : '';
+  if (principleMerged) d.principle = principleMerged;
+  if (Array.isArray(stored.coreValues)) {
+    const vals = stored.coreValues
+      .map((x) => String(x ?? '').trim().slice(0, 80))
+      .filter(Boolean)
+      .slice(0, 12);
+    if (vals.length) d.coreValues = vals;
+  }
+  return d;
+}
+
+async function readLandingContentFile() {
+  try {
+    const raw = await fs.readFile(LANDING_CONTENT_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return mergeLandingContent(parsed);
+  } catch {
+    return { ...DEFAULT_LANDING_CONTENT };
+  }
+}
+
+function normalizeLandingPutBody(body) {
+  const slogan = String(body?.slogan ?? '').trim().slice(0, 280);
+  const principle = String(body?.principle ?? '').trim().slice(0, 120);
+  const rawVals = Array.isArray(body?.coreValues) ? body.coreValues : [];
+  const coreValues = rawVals
+    .map((x) => String(x ?? '').trim().slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 12);
+  if (!slogan) throw new Error('Slogan is required');
+  if (!principle) throw new Error('Principle is required');
+  if (coreValues.length < 1) throw new Error('At least one core value is required');
+  return { slogan, principle, coreValues };
+}
+
+async function writeLandingContent(validated) {
+  const out = {
+    slogan: validated.slogan,
+    principle: validated.principle,
+    coreValues: validated.coreValues,
+    updatedAt: new Date().toISOString(),
+  };
+  await fs.mkdir(path.dirname(LANDING_CONTENT_PATH), { recursive: true });
+  await fs.writeFile(LANDING_CONTENT_PATH, JSON.stringify(out, null, 2), 'utf8');
+}
+
 app.get('/api/admin/setup-status', async (_req, res) => {
   let config = await readAdminConfig();
   if (!config?.username) {
-    const users = await readUsers();
+    const users = await readUsersJson();
     const admin = users.find((u) => String(u.departmentId || '').toLowerCase() === 'admin');
     if (admin) {
       await writeAdminConfig({ email: admin.email || '', username: admin.employeeId });
@@ -2092,7 +2444,7 @@ app.post('/api/admin/setup', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
-  const users = await readUsers();
+  const users = await readUsersJson();
   const adminIndex = users.findIndex((u) => String(u.departmentId || '').toLowerCase() === 'admin');
   if (adminIndex === -1) {
     users.push({
@@ -2127,7 +2479,7 @@ app.put('/api/admin/credentials', authRequired, async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
-  const users = await readUsers();
+  const users = await readUsersJson();
   const adminIndex = users.findIndex((u) => String(u.departmentId || '').toLowerCase() === 'admin');
   if (adminIndex === -1) return res.status(500).json({ error: 'Admin user not found' });
   const oldUsername = users[adminIndex].employeeId;
@@ -2149,6 +2501,49 @@ app.get('/api/admin/credentials', authRequired, async (req, res) => {
   }
   const config = await readAdminConfig();
   return res.json({ email: config?.email || '', username: config?.username || '' });
+});
+
+app.get('/api/public/landing-content', async (_req, res) => {
+  try {
+    const data = await readLandingContentFile();
+    return res.json({
+      slogan: data.slogan,
+      principle: data.principle,
+      coreValues: data.coreValues,
+    });
+  } catch {
+    return res.status(500).json({ error: 'Could not load landing content' });
+  }
+});
+
+app.get('/api/admin/landing-content', authRequired, async (req, res) => {
+  if (!isAdminUser(req)) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  const data = await readLandingContentFile();
+  return res.json({
+    slogan: data.slogan,
+    principle: data.principle,
+    coreValues: data.coreValues,
+  });
+});
+
+app.put('/api/admin/landing-content', authRequired, async (req, res) => {
+  if (!isAdminUser(req)) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  try {
+    const validated = normalizeLandingPutBody(req.body);
+    await writeLandingContent(validated);
+    return res.json({
+      ok: true,
+      slogan: validated.slogan,
+      principle: validated.principle,
+      coreValues: validated.coreValues,
+    });
+  } catch (e) {
+    return res.status(400).json({ error: e?.message || 'Invalid payload' });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
@@ -2242,8 +2637,17 @@ app.post('/api/login', async (req, res) => {
   const deptId = String(department.id || '').toLowerCase();
   const deptLabel = String(department.label || '').toLowerCase();
   const deptPath = String(department.folderPath || '').toLowerCase();
+  const externalAllowedDeptIds = new Set(
+    (authSource === 'external' ? ext?.departmentsFromAuth : [])
+      .map((d) => String(d?.id || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const externalDeptMatch =
+    externalAllowedDeptIds.has(selectedDepartmentId) ||
+    externalAllowedDeptIds.has(deptId);
   const deptMatches =
     isAdmin ||
+    externalDeptMatch ||
     userDeptId === selectedDepartmentId ||
     userDeptId === deptId ||
     deptId.startsWith(userDeptId) ||

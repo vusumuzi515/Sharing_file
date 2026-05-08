@@ -6,8 +6,8 @@
 
 /* Dark suit / values-wheel palette (monochrome corporate). */
 :root {
-  --inyatsi-bg: #07090d;
-  --inyatsi-bg-mid: #0e131c;
+  --inyatsi-bg: #0b0d10;
+  --inyatsi-bg-mid: #171b21;
   --inyatsi-accent: #e8eaed;
   --inyatsi-accent-hover: #ffffff;
   --inyatsi-accent-deep: #050608;
@@ -32,21 +32,21 @@ body {
   background-image:
     radial-gradient(
       ellipse 125% 100% at 50% 44%,
-      rgba(7, 9, 13, 0) 0%,
-      rgba(7, 9, 13, 0.28) 45%,
-      rgba(5, 6, 8, 0.82) 100%
+      rgba(11, 13, 16, 0) 0%,
+      rgba(11, 13, 16, 0.2) 48%,
+      rgba(11, 13, 16, 0.86) 100%
     ),
-    linear-gradient(180deg, rgba(12, 16, 24, 0.12) 0%, rgba(7, 9, 13, 0.58) 100%),
-    url("/inyatsi-values-wheel.png");
-  background-size: auto, auto, cover;
-  background-position: center, center, center 46%;
+    linear-gradient(180deg, rgba(23, 27, 33, 0.08) 0%, rgba(11, 13, 16, 0.62) 100%),
+    url('/dashboard-summary-bg.png');
+  background-size: auto, auto, contain;
+  background-position: center, center, center center;
   background-repeat: no-repeat, no-repeat, no-repeat;
 }
 
 /* Desktop: optically centre wheel in main column (sidebar is w-64 → shift +8rem). */
 @media (min-width: 1024px) {
   .portal-shell-bg:not(.landing-hero) {
-    background-position: center, center, calc(50% + 8rem) 46%;
+    background-position: center, center, calc(50% + 5rem) center;
   }
 }
 

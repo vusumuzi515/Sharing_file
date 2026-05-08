@@ -142,10 +142,10 @@ export default function SiteFiles() {
 
   const departmentsWithAccess = isAuthenticated ? departments : publicDepartments;
 
-  /** Filter picker list (optional search); show full list when search box is empty so departments appear immediately after load. */
+  /** Require at least 3 chars before showing department matches. */
   const filteredDepartments = useMemo(() => {
     const q = deptPickerQuery.trim().toLowerCase();
-    if (!q) return departmentsWithAccess;
+    if (q.length < 3) return [];
     return departmentsWithAccess.filter((dept) => {
       const label = normalizeDepartmentLabel(dept.label, dept.id).toLowerCase();
       const id = String(dept.id || '').toLowerCase();
@@ -607,7 +607,7 @@ export default function SiteFiles() {
                 type="search"
                 enterKeyHint="search"
                 autoComplete="off"
-                placeholder="Search departments"
+                placeholder="Type at least 3 letters"
                 value={deptPickerQuery}
                 onChange={(e) => setDeptPickerQuery(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-9 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-zinc-950/40 focus:outline-none focus:ring-2 focus:ring-zinc-950/20"
@@ -623,6 +623,10 @@ export default function SiteFiles() {
               ) : departmentsWithAccess.length === 0 ? (
                 <p className="px-3 py-6 text-center text-sm text-slate-500">
                   No departments. Check Node can reach EXTERNAL_AUTH_URL (ngrok + Windows bridge running).
+                </p>
+              ) : deptPickerQuery.trim().length < 3 ? (
+                <p className="px-3 py-6 text-center text-sm text-slate-500">
+                  Type at least 3 letters to search departments.
                 </p>
               ) : (
                 <ul className="p-1.5" role="listbox" aria-label="Departments">
