@@ -68,28 +68,28 @@ export default function App() {
 
   return (
     <DepartmentProvider>
-    <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/" element={<Layout />}>
-        <Route path="dashboard" element={<FileSharingSystemPage />} />
+      <Routes>
+        <Route path="/" element={<Landing />} />
         <Route path="admin-sign-in" element={<AdminSignIn />} />
-        <Route path="file-preview" element={<FilePreview />} />
-        <Route path="site-files" element={<SiteFiles />} />
-        <Route path="recent-uploads" element={<RecentUploads />} />
-        <Route path="recent" element={<RecentUploads />} />
-        <Route path="users" element={<UsersManagement />} />
-        <Route path="activity-logs" element={<ActivityLogs />} />
-        <Route path="activity" element={<ActivityLogs />} />
-        <Route
-          path="system-settings"
-          element={
-            <AdminRoute>
-              <SystemSettings />
-            </AdminRoute>
-          }
-        />
-      </Route>
-    </Routes>
+        <Route path="/" element={<Layout />}>
+          <Route path="dashboard" element={<FileSharingSystemPage />} />
+          <Route path="file-preview" element={<FilePreview />} />
+          <Route path="site-files" element={<SiteFiles />} />
+          <Route path="recent-uploads" element={<RecentUploads />} />
+          <Route path="recent" element={<RecentUploads />} />
+          <Route path="users" element={<UsersManagement />} />
+          <Route path="activity-logs" element={<ActivityLogs />} />
+          <Route path="activity" element={<ActivityLogs />} />
+          <Route
+            path="system-settings"
+            element={
+              <AdminRoute>
+                <SystemSettings />
+              </AdminRoute>
+            }
+          />
+        </Route>
+      </Routes>
     </DepartmentProvider>
   );
 }

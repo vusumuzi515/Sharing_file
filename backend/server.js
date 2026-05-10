@@ -2650,6 +2650,7 @@ app.post('/api/login', async (req, res) => {
   }
 
   const config = await getDynamicConfig();
+  const users = Array.isArray(config.users) ? config.users : [];
   let departments = [...(config.departments || [])];
   if (EXTERNAL_AUTH_URL && REMOTE_API_BEARER_TOKEN) {
     const r = await fetchRemoteDepartments(REMOTE_API_BEARER_TOKEN, null);
@@ -2715,7 +2716,6 @@ app.post('/api/login', async (req, res) => {
   }
 
   if (!user) {
-    const users = config.users;
     const localUser = users.find((u) => u.employeeId?.toLowerCase() === employeeId.toLowerCase());
     if (!localUser) return res.status(401).json({ error: 'Invalid credentials' });
     const storedPassword = String(localUser.password || '').trim();

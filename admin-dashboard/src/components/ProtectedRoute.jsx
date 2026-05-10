@@ -16,7 +16,10 @@ function canUserAccessDepartment(userDeptId, routeDeptId) {
 /**
  * Protects routes: user must have access to the department (team sharing within dept, admin sees all)
  */
-export default function ProtectedRoute({ children, requireDepartmentMatch = false }) {
+export default function ProtectedRoute({
+  children,
+  requireDepartmentMatch = false,
+}) {
   const token = getToken();
   const user = getCurrentUser();
   const params = useParams();

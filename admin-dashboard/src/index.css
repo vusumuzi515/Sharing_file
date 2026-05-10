@@ -28,25 +28,19 @@ body {
 .portal-shell-bg {
   position: relative;
   isolation: isolate;
-  background-color: var(--inyatsi-bg);
-  background-image:
-    radial-gradient(
-      ellipse 125% 100% at 50% 44%,
-      rgba(11, 13, 16, 0) 0%,
-      rgba(11, 13, 16, 0.2) 48%,
-      rgba(11, 13, 16, 0.86) 100%
-    ),
-    linear-gradient(180deg, rgba(23, 27, 33, 0.08) 0%, rgba(11, 13, 16, 0.62) 100%),
-    url('/dashboard-summary-bg.png');
-  background-size: auto, auto, contain;
-  background-position: center, center, center center;
-  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-color: #ffffff;
+  /* Keep values text while removing the vertical seam artifact. */
+  background-image: url('/dashboard-core-values-bg.png');
+  background-size: 58%;
+  background-position: calc(50% + 2rem) 54%;
+  background-repeat: no-repeat;
 }
 
 /* Desktop: optically centre wheel in main column (sidebar is w-64 → shift +8rem). */
 @media (min-width: 1024px) {
   .portal-shell-bg:not(.landing-hero) {
-    background-position: center, center, calc(50% + 5rem) center;
+    background-size: 54%;
+    background-position: calc(50% + 1.5rem) 54%;
   }
 }
 
@@ -175,6 +169,16 @@ body:has(.landing-hero) {
 }
 
 @layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none; /* IE and legacy Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none; /* Chrome, Safari, Opera */
+  }
+
   .transition-page {
     @apply transition-all duration-200 ease-out;
   }
