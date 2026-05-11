@@ -2,7 +2,14 @@
  * Sticky bottom action bar for mobile — Upload & Refresh.
  * Min 48px touch targets for field workers.
  */
-export default function BottomActionBar({ onUpload, onRefresh, uploading, refreshing, showUpload = true }) {
+export default function BottomActionBar({
+  onUpload,
+  onRefresh,
+  uploading,
+  refreshing,
+  showUpload = true,
+  uploadDisabled = false,
+}) {
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-center gap-4 border-t border-slate-200/80 bg-white/95 px-4 py-3 backdrop-blur-sm sm:hidden"
@@ -12,8 +19,10 @@ export default function BottomActionBar({ onUpload, onRefresh, uploading, refres
         <button
           type="button"
           onClick={onUpload}
-          disabled={uploading}
-          className="btn btn-primary flex min-h-[48px] min-w-[48px] flex-1 max-w-[160px] gap-2 shadow-md"
+          disabled={uploading || uploadDisabled}
+          className={`btn flex min-h-[48px] min-w-[48px] flex-1 max-w-[160px] gap-2 shadow-md ${
+            uploadDisabled ? 'btn-secondary opacity-60 cursor-not-allowed' : 'btn-primary'
+          }`}
         >
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />

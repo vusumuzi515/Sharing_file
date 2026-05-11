@@ -14,6 +14,7 @@ import {
 } from '../services/monitoringApi';
 import { useAuthSync } from '../hooks/useAuthSync';
 import { useDepartments, useFiles, useProjects, useRefreshDepartments } from '../hooks/useFiles';
+import { usePortalSession } from '../hooks/usePortalSession';
 import { useToast } from '../context/ToastContext';
 import { useDepartment } from '../context/DepartmentContext';
 import { IconFolder, IconLock, IconSearch, IconArrowLeft } from '../components/Icons';
@@ -24,6 +25,49 @@ function normalizeDepartmentLabel(label, id) {
   const trimmed = String(label || '').trim();
   if (id === 'finance' && /^finance\s*documents$/i.test(trimmed)) return 'Finance Documents';
   return trimmed || '';
+}
+
+/** Match URL ?department= slug to a row the API returned (ids rarely align 1:1 with JWT). */
+function departmentSlugMatchesSelection(selectedSlug, dept) {
+  const sel = String(selectedSlug || '').trim().toLowerCase();
+  if (!sel) return false;
+  const deptId = String(dept?.id || '').toLowerCase();
+  const deptLabel = String(dept?.label || dept?.department || '').toLowerCase();
+  const deptPath = String(dept?.folderPath || '').toLowerCase().replace(/\\/g, '/');
+  return (
+    sel === deptId ||
+    deptId.startsWith(sel + '_') ||
+    sel.startsWith(deptId) ||
+    deptId.includes(sel) ||
+    sel.includes(deptId) ||
+    deptLabel.includes(sel) ||
+    deptPath.includes(sel)
+  );
+}
+
+function resolveSelectedDepartment(departments, selectedDept, { fallbackFromUser }) {
+  const list = Array.isArray(departments) ? departments : [];
+  const sel = String(selectedDept || '').trim().toLowerCase();
+  if (!sel) return undefined;
+
+  const accessible = list.filter((d) => d?.has_access !== false);
+  let hit = accessible.find((d) => String(d.id || '').toLowerCase() === sel);
+  if (hit) return hit;
+  hit = accessible.find((d) => departmentSlugMatchesSelection(sel, d));
+  if (hit) return hit;
+
+  const u = fallbackFromUser;
+  if (u && String(u.departmentId || '').trim().toLowerCase() === sel) {
+    return {
+      id: String(u.departmentId || '').trim(),
+      label: normalizeDepartmentLabel(u.department, u.departmentId) || u.departmentId,
+      folderPath: u.folderPath || '/',
+      permission: u.permission === 'view' ? 'view' : 'edit',
+      has_access: true,
+      folders: [],
+    };
+  }
+  return undefined;
 }
 
 function formatSize(bytes) {
@@ -83,6 +127,7 @@ export default function SiteFiles() {
   const selectedProject = searchParams.get('project') || '';
 
   const { data: departments = [], isLoading: deptsLoading, isFetching: deptsFetching, error: deptsError } = useDepartments();
+  const { data: portalSession } = usePortalSession();
   const refreshDepartmentsFn = useRefreshDepartments();
   const { data: projectsData = [], isLoading: projectsLoading, error: projectsError } = useProjects(selectedDept);
   const { data: filesData, isLoading: filesLoading, error: filesError } = useFiles(selectedDept, selectedProject, search);
@@ -214,7 +259,13 @@ export default function SiteFiles() {
   const hasFixedDepartment = Boolean(fixedDepartmentId);
 
   /** Use the list actually shown on the grid (API when logged in, public list when logged out). */
-  const selectedDeptData = departmentsWithAccess.find((d) => d.id === selectedDept);
+  const selectedDeptData = useMemo(
+    () =>
+      resolveSelectedDepartment(departmentsWithAccess, selectedDept, {
+        fallbackFromUser: isAuthenticated ? currentUser : null,
+      }),
+    [departmentsWithAccess, selectedDept, isAuthenticated, currentUser],
+  );
   const deptHasAccess =
     Boolean(selectedDept) &&
     (deptListLoading
@@ -289,7 +340,23 @@ export default function SiteFiles() {
     () => visibleProjects.filter((project) => project.can_edit !== false),
     [visibleProjects],
   );
-  const canUpload = uploadableProjects.length > 0;
+  const canUploadByFolderAcl = uploadableProjects.length > 0;
+  const sessionCanUpload =
+    portalSession?.capabilities?.upload ??
+    currentUser?.capabilities?.upload ??
+    false;
+  const uploadTransportAvailable =
+    portalSession?.uploadTransport?.available ?? currentUser?.uploadTransport?.available ?? true;
+  const canUpload = canUploadByFolderAcl && sessionCanUpload && uploadTransportAvailable;
+  const uploadDisabledReason = !sessionCanUpload
+    ? 'Your account has no upload permission on this department.'
+    : !uploadTransportAvailable
+      ? portalSession?.uploadTransport?.reason ||
+        currentUser?.uploadTransport?.reason ||
+        'Upload is unavailable because the file-server upload endpoint is offline.'
+      : !canUploadByFolderAcl
+        ? 'Upload is not allowed in this folder.'
+        : '';
 
   const handleRefresh = async () => {
     try {
@@ -391,7 +458,10 @@ export default function SiteFiles() {
   };
 
   const handleUploadButtonClick = () => {
-    if (!selectedDept || !canUpload) return;
+    if (!selectedDept || !canUpload) {
+      if (selectedDept && uploadDisabledReason) showToast(uploadDisabledReason);
+      return;
+    }
     if (uploadableProjects.length === 1) {
       handleUploadTargetSelect(uploadableProjects[0].id);
       return;
@@ -524,17 +594,20 @@ export default function SiteFiles() {
                     {deptsFetching ? 'Refreshing…' : 'Refresh'}
                   </button>
                 ) : null}
-                {selectedDept && canUpload && (
+                {selectedDept && (
                   <div className="relative" data-upload-trigger>
                     <button
                       type="button"
                       onClick={handleUploadButtonClick}
-                      disabled={uploading || uploadableProjects.length === 0}
-                      className="btn btn-primary min-h-[40px] rounded-xl px-4 text-sm"
+                      disabled={uploading || !canUpload}
+                      title={canUpload ? 'Upload file' : uploadDisabledReason}
+                      className={`min-h-[40px] rounded-xl px-4 text-sm ${
+                        canUpload ? 'btn btn-primary' : 'btn btn-secondary opacity-60 cursor-not-allowed'
+                      }`}
                     >
                       {uploading ? 'Uploading...' : 'Upload File'}
                     </button>
-                    {uploadMenuOpen ? (
+                    {uploadMenuOpen && canUpload ? (
                       <div
                         className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"
                         data-upload-menu
@@ -710,7 +783,7 @@ export default function SiteFiles() {
                       <div className="flex shrink-0 items-center gap-2">
                         {hasAccess ? (
                           <a
-                            href={getFilePreviewPageUrl(file)}
+                            href={getFilePreviewPageUrl(file, { department: selectedDept, project: selectedProject })}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="btn btn-sm btn-secondary"
@@ -758,7 +831,7 @@ export default function SiteFiles() {
                       {hasAccess ? (
                         <div className="flex shrink-0 items-center gap-3">
                           <a
-                            href={getFilePreviewPageUrl(file)}
+                            href={getFilePreviewPageUrl(file, { department: selectedDept, project: selectedProject })}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-medium text-brand hover:text-brand-light hover:underline"
@@ -827,7 +900,7 @@ export default function SiteFiles() {
                             {hasAccess ? (
                               <div className="flex items-center justify-end gap-4">
                                 <a
-                                  href={getFilePreviewPageUrl(file)}
+                                  href={getFilePreviewPageUrl(file, { department: selectedDept, project: selectedProject })}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-sm font-medium text-brand hover:text-brand-light hover:underline"
@@ -866,7 +939,8 @@ export default function SiteFiles() {
         onRefresh={handleRefresh}
         uploading={uploading}
         refreshing={deptsFetching}
-        showUpload={selectedDept && canUpload}
+        showUpload={Boolean(selectedDept)}
+        uploadDisabled={!canUpload}
       />
 
       {showAuthPrompt ? (

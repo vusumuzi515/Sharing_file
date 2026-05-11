@@ -260,11 +260,13 @@ export async function fetchBridgeHealth(options = {}) {
 export async function loginDashboard({ username, password, departmentId }) {
   const deptId = String(departmentId || '').trim().toLowerCase();
   if (!deptId) throw new Error('Select your department');
+  const employeeId = String(username || deptId).trim();
+  if (!employeeId) throw new Error('Provide department credentials');
   const res = await fetch(`${BASE_URL}/api/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getNgrokHeaders() },
     body: JSON.stringify({
-      employeeId: username,
+      employeeId,
       password,
       role: 'Project Manager',
       departmentId: deptId,
@@ -519,15 +521,20 @@ export function getPreviewUrl(fileId) {
   return `${BASE_URL}/api/download?fileId=${encodeURIComponent(fileId)}&preview=1${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 }
 
-export function getFilePreviewPageUrl({
-  fileId,
-  id,
-  name = '',
-  fileType = '',
-  type = '',
-  canDownload = false,
-  can_download = false,
-}) {
+export function getFilePreviewPageUrl(
+  {
+    fileId,
+    id,
+    name = '',
+    fileType = '',
+    type = '',
+    canDownload = false,
+    can_download = false,
+    department = '',
+    project,
+  } = {},
+  context = {},
+) {
   const resolvedFileId = String(fileId || id || '').trim();
   const params = new URLSearchParams();
   if (!resolvedFileId) return '/file-preview';
@@ -535,6 +542,13 @@ export function getFilePreviewPageUrl({
   if (name) params.set('name', name);
   if (fileType || type) params.set('type', String(fileType || type));
   params.set('download', canDownload || can_download ? '1' : '0');
+  const dept = String(context.department ?? department ?? '').trim();
+  const projRaw = context.project !== undefined ? context.project : project;
+  const proj = projRaw !== undefined && projRaw !== null ? String(projRaw).trim() : '';
+  if (dept) {
+    params.set('department', dept);
+    if (proj !== '') params.set('project', proj);
+  }
   return `/file-preview?${params.toString()}`;
 }
 
@@ -557,7 +571,9 @@ export async function uploadFile(file, departmentId, project = 'General') {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error?.error || `Upload failed: ${response.status}`);
+    const msg = error?.error || `Upload failed: ${response.status}`;
+    const reason = error?.reason ? String(error.reason) : '';
+    throw new Error(reason ? `${msg} (${reason})` : msg);
   }
   
   return response.json();

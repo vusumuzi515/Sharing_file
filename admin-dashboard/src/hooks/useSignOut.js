@@ -13,6 +13,6 @@ export function useSignOut() {
     clearToken();
     clearDepartment();
     queryClient.clear();
-    navigate({ pathname: '/site-files', search: '' }, { replace: true });
+    navigate('/', { replace: true });
   }, [navigate, queryClient, clearDepartment]);
 }

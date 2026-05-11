@@ -12,7 +12,7 @@ export default function TopBar({ onMenuClick, pageTitle }) {
   const displayName = user?.name || user?.employeeId || '';
 
   return (
-    <header className="relative z-20 border-b border-white/10 bg-[#0a0d12] text-white shadow-lg shadow-black/20">
+    <header className="relative z-20 border-b border-white/10 bg-[#103454] text-white shadow-lg shadow-black/20">
       <div className="mx-auto flex min-h-[56px] w-full max-w-none flex-wrap items-center gap-2 px-3 py-2 sm:gap-4 sm:px-6 lg:min-h-[64px] lg:px-10">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <button

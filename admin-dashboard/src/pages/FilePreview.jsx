@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getDownloadUrl, getPreviewUrl } from '../services/monitoringApi';
+import { IconArrowLeft } from '../components/Icons';
 
 const IMAGE_TYPES = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']);
 const IFRAME_TYPES = new Set(['pdf', 'txt', 'text', 'csv', 'json']);
@@ -32,11 +33,14 @@ function getOpenWithLinks(ext, fileUrl) {
 }
 
 export default function FilePreview() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const fileId = String(searchParams.get('fileId') || '').trim();
   const name = String(searchParams.get('name') || 'File').trim();
   const fileType = String(searchParams.get('type') || '').trim();
   const canDownload = searchParams.get('download') === '1';
+  const department = String(searchParams.get('department') || '').trim();
+  const project = String(searchParams.get('project') || '').trim();
 
   const ext = useMemo(() => getExtension(name, fileType), [name, fileType]);
   const previewUrl = fileId ? getPreviewUrl(fileId) : '';
@@ -45,16 +49,31 @@ export default function FilePreview() {
   const isFramePreview = IFRAME_TYPES.has(ext);
   const openWithLinks = useMemo(() => getOpenWithLinks(ext, downloadUrl), [ext, downloadUrl]);
 
+  const handleBackToDashboard = () => {
+    if (department) {
+      const q = new URLSearchParams({ department });
+      if (project) q.set('project', project);
+      navigate(`/site-files?${q.toString()}`);
+      return;
+    }
+    navigate('/dashboard');
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold text-slate-900">{name}</h1>
+        <div className="flex min-h-[48px] min-w-0 flex-1 items-center gap-3">
+          <button
+            type="button"
+            onClick={handleBackToDashboard}
+            className="btn btn-secondary flex min-h-[48px] min-w-[48px] shrink-0 !p-0 sm:min-h-[44px] sm:min-w-[44px]"
+            aria-label={department ? 'Back to department files' : 'Back to dashboard'}
+          >
+            <IconArrowLeft className="h-5 w-5" />
+          </button>
+          <h1 className="min-w-0 flex-1 truncate text-xl font-semibold text-slate-900">{name}</h1>
         </div>
-        <div className="flex items-center gap-3">
-          <Link to="/site-files" className="btn btn-secondary">
-            Back
-          </Link>
+        <div className="flex shrink-0 items-center gap-3 sm:justify-end">
           {canDownload && fileId ? (
             <a href={downloadUrl} download className="btn btn-primary">
               Download

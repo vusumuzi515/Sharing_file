@@ -16,7 +16,9 @@ import RecentUploads from './pages/RecentUploads';
 import SystemSettings from './pages/SystemSettings';
 import UsersManagement from './pages/UsersManagement';
 import AdminRoute from './components/AdminRoute';
+import ProtectedRoute from './components/ProtectedRoute';
 import AdminSignIn from './pages/AdminSignIn';
+import DepartmentSignIn from './pages/DepartmentSignIn';
 import Landing from './pages/Landing';
 
 export default function App() {
@@ -70,8 +72,16 @@ export default function App() {
     <DepartmentProvider>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="sign-in" element={<DepartmentSignIn />} />
         <Route path="admin-sign-in" element={<AdminSignIn />} />
-        <Route path="/" element={<Layout />}>
+        <Route
+          path="/"
+          element={(
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          )}
+        >
           <Route path="dashboard" element={<FileSharingSystemPage />} />
           <Route path="file-preview" element={<FilePreview />} />
           <Route path="site-files" element={<SiteFiles />} />

@@ -43,7 +43,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
       <aside
         className={`
-          fixed left-0 top-0 z-40 flex h-[100dvh] w-64 min-h-0 flex-col bg-[#0a0d12] text-zinc-300
+          fixed left-0 top-0 z-40 flex h-[100dvh] w-64 min-h-0 flex-col bg-[#103454] text-zinc-300
           transition-transform duration-200 ease-out lg:static lg:z-0 lg:h-full lg:max-h-[100dvh] lg:translate-x-0 lg:shadow-none
           ${isOpen ? 'translate-x-0 shadow-2xl shadow-black/50' : '-translate-x-full shadow-none'}
         `}

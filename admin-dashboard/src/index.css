@@ -66,8 +66,22 @@ body:has(.landing-hero) {
   background-color: #ffffff;
   background-image: url('/logo.png');
   background-repeat: no-repeat;
-  background-position: center center;
-  background-size: contain;
+  background-position: center 43%;
+  background-size: min(900px, 76vw);
+}
+
+@media (max-height: 900px) and (min-width: 1024px) {
+  .landing-hero.portal-shell-bg {
+    background-size: min(840px, 72vw);
+    background-position: center 40%;
+  }
+}
+
+@media (max-width: 1023px) {
+  .landing-hero.portal-shell-bg {
+    background-size: cover;
+    background-position: center center;
+  }
 }
 
 .landing-hero.portal-shell-bg::before {

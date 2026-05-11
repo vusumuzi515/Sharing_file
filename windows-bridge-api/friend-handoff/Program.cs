@@ -14,6 +14,13 @@ if (string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase))
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Slow ngrok / mobile uploads can trip Kestrel's default minimum body data rate and abort mid-request.
+builder.WebHost.ConfigureKestrel((ctx, opts) =>
+{
+    opts.Limits.MinRequestBodyDataRate = null;
+    opts.Limits.MinResponseDataRate = null;
+});
+
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -96,9 +103,67 @@ static string ToDepartmentId(string value)
     return (value ?? "").Trim().ToLowerInvariant().Replace(" ", "_");
 }
 
+static bool TryGetDirectories(string path, out string[] directories)
+{
+    directories = Array.Empty<string>();
+    try
+    {
+        directories = Directory.GetDirectories(path);
+        return true;
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return false;
+    }
+    catch (DirectoryNotFoundException)
+    {
+        return false;
+    }
+    catch (IOException)
+    {
+        return false;
+    }
+}
+
+static bool TryGetFiles(string path, out string[] files)
+{
+    files = Array.Empty<string>();
+    try
+    {
+        files = Directory.GetFiles(path);
+        return true;
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return false;
+    }
+    catch (DirectoryNotFoundException)
+    {
+        return false;
+    }
+    catch (IOException)
+    {
+        return false;
+    }
+}
+
 static (string Name, string Path)? ResolveDepartmentDirectory(string rootPath, string requestedDepartment)
 {
-    if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(requestedDepartment) || !Directory.Exists(rootPath))
+    if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(requestedDepartment))
+    {
+        return null;
+    }
+
+    try
+    {
+        rootPath = Path.GetFullPath(rootPath);
+    }
+    catch
+    {
+        return null;
+    }
+
+    if (!Directory.Exists(rootPath))
     {
         return null;
     }
@@ -106,7 +171,52 @@ static (string Name, string Path)? ResolveDepartmentDirectory(string rootPath, s
     var requested = requestedDepartment.Trim();
     var requestedId = ToDepartmentId(requested);
 
-    foreach (var dir in Directory.GetDirectories(rootPath))
+    var tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var raw in new[] { requested, requestedId, requested.Replace('_', ' '), requestedId.Replace('_', ' ') })
+    {
+        var cand = raw.Trim();
+        if (string.IsNullOrEmpty(cand) || !tried.Add(cand))
+        {
+            continue;
+        }
+
+        string combined;
+        try
+        {
+            combined = Path.GetFullPath(Path.Combine(rootPath, cand));
+        }
+        catch
+        {
+            continue;
+        }
+
+        if (!IsPathUnderRoot(rootPath, combined))
+        {
+            continue;
+        }
+
+        try
+        {
+            if (!Directory.Exists(combined))
+            {
+                continue;
+            }
+        }
+        catch
+        {
+            continue;
+        }
+
+        var leaf = Path.GetFileName(combined.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return (leaf, combined);
+    }
+
+    if (!TryGetDirectories(rootPath, out var dirs))
+    {
+        return null;
+    }
+
+    foreach (var dir in dirs)
     {
         var name = Path.GetFileName(dir);
         if (string.Equals(name, requested, StringComparison.OrdinalIgnoreCase) ||
@@ -262,7 +372,7 @@ app.MapPost("/api/auth/login", (WindowsLoginRequest request, IConfiguration conf
         });
     }
 
-    var accessibleDepartments = Directory.GetDirectories(rootPath)
+    var accessibleDepartments = (TryGetDirectories(rootPath, out var loginDeptDirs) ? loginDeptDirs : Array.Empty<string>())
         .Select(dir =>
         {
             var name = Path.GetFileName(dir);
@@ -330,7 +440,7 @@ app.MapGet("/api/departments", (string? username, IConfiguration config) =>
 
     var userGroups = string.IsNullOrWhiteSpace(username) ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : GetUserLocalGroups(username);
 
-    var departments = Directory.GetDirectories(rootPath)
+    var departments = (TryGetDirectories(rootPath, out var apiDeptDirs) ? apiDeptDirs : Array.Empty<string>())
         .Select(dir =>
         {
             var name = Path.GetFileName(dir);
@@ -364,7 +474,7 @@ app.MapGet("/api/departments", (string? username, IConfiguration config) =>
     });
 });
 
-app.MapGet("/api/department-content", (string department, string? username, IConfiguration config) =>
+app.MapGet("/api/department-content", (string? department, string? username, IConfiguration config) =>
 {
     var rootPath = config["FileServer:RootPath"] ?? "";
     if (string.IsNullOrWhiteSpace(rootPath))
@@ -400,7 +510,11 @@ app.MapGet("/api/department-content", (string department, string? username, ICon
         return Results.StatusCode(StatusCodes.Status403Forbidden);
     }
 
-    var folders = Directory.GetDirectories(departmentPath)
+    var dirsOk = TryGetDirectories(departmentPath, out var dirPaths);
+    var filesOk = TryGetFiles(departmentPath, out var filePaths);
+    var listingRestricted = !dirsOk || !filesOk;
+
+    var folders = dirPaths
         .Select(dir => new
         {
             name = Path.GetFileName(dir),
@@ -410,7 +524,7 @@ app.MapGet("/api/department-content", (string department, string? username, ICon
         .OrderBy(x => x.name)
         .ToArray();
 
-    var files = Directory.GetFiles(departmentPath)
+    var files = filePaths
         .Select(file =>
         {
             var info = new FileInfo(file);
@@ -432,12 +546,18 @@ app.MapGet("/api/department-content", (string department, string? username, ICon
         departmentPath,
         username,
         expectedGroup = GetDepartmentUsersGroupName(departmentName),
+        /** Effective NTFS rights on the department root (used when no project subfolder exists yet). */
+        access = GetBasicPermissions(departmentPath, username, userGroups),
         folders,
-        files
+        files,
+        listingRestricted,
+        listingHint = listingRestricted
+            ? "The Windows account running windows-bridge-api cannot list this folder. Grant that account Read & execute + List folder contents on the department path (the API runs as that account, not as the signed-in user)."
+            : null
     });
 });
 
-app.MapGet("/api/files", (string department, string? username, IConfiguration config) =>
+app.MapGet("/api/files", (string? department, string? username, IConfiguration config) =>
 {
     var rootPath = config["FileServer:RootPath"] ?? "";
     if (string.IsNullOrWhiteSpace(rootPath))
@@ -500,6 +620,10 @@ app.MapGet("/api/files", (string department, string? username, IConfiguration co
     });
 });
 
+// Lightweight health check for upload route — avoids multipart POST probes that time out over slow tunnels.
+app.MapGet("/api/files/upload", () =>
+    Results.Ok(new { ok = true, hint = "POST multipart/form-data with field file; query department & project." }));
+
 app.MapPost("/api/files/upload", async (HttpRequest request, string? department, string? project, string? username, IConfiguration config) =>
 {
     var rootPath = config["FileServer:RootPath"] ?? "";
@@ -533,7 +657,16 @@ app.MapPost("/api/files/upload", async (HttpRequest request, string? department,
     if (!hasAccess)
     {
         var aclAllowed = GetBasicPermissions(departmentPath, username, userGroups).canView;
-        if (!aclAllowed) return Results.StatusCode(StatusCodes.Status403Forbidden);
+        if (!aclAllowed)
+        {
+            return Results.Json(
+                new
+                {
+                    error = "No access to this department folder.",
+                    detail = "NTFS denies Read/List for this Windows account, or the signed-in username does not match the ACL (use the same account that appears on the folder Security tab).",
+                },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
     }
 
     var form = await request.ReadFormAsync();
@@ -568,7 +701,14 @@ app.MapPost("/api/files/upload", async (HttpRequest request, string? department,
         var canEditTarget = GetBasicPermissions(targetDir, username, userGroups).canEdit;
         if (!canEditTarget)
         {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Json(
+                new
+                {
+                    error = "File server denied upload permission for this folder.",
+                    detail =
+                        "NTFS does not grant Modify / Create files for this account on the upload path. Grant Modify on the department folder (and project subfolder when not General). If the folder Properties → Read-only is ticked, clear it for folders — it is not the same as file read-only.",
+                },
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         var targetPath = Path.GetFullPath(Path.Combine(targetDir, safeName));
@@ -597,6 +737,18 @@ app.MapPost("/api/files/upload", async (HttpRequest request, string? department,
                 access = GetBasicPermissions(targetPath, username, userGroups)
             }
         });
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        return Results.Json(
+            new
+            {
+                error = "Access denied writing the file.",
+                detail = ex.Message,
+                hint =
+                    "Grant the Windows account that runs windows-bridge-api Modify on this department folder (File.Create runs as that account). NTFS rights for the signed-in user control what the UI shows, but IO uses the bridge process identity.",
+            },
+            statusCode: StatusCodes.Status403Forbidden);
     }
     catch (Exception ex)
     {
@@ -784,7 +936,9 @@ static class WindowsAclPermissions
         }
 
         var attributes = File.GetAttributes(targetPath);
-        var isReadOnly = (attributes & FileAttributes.ReadOnly) != 0;
+        var isDirectoryEntry = attributes.HasFlag(FileAttributes.Directory);
+        // Folder "Read-only" attribute does not mean the same as file read-only; treating it as non-editable blocked uploads on valid NTFS Modify ACLs.
+        var isReadOnly = !isDirectoryEntry && (attributes & FileAttributes.ReadOnly) != 0;
 
         if (string.IsNullOrWhiteSpace(username))
         {
@@ -894,6 +1048,12 @@ static class WindowsAclPermissions
         {
             identities.Add(normalized);
             identities.Add($@"{Environment.MachineName}\{normalized}");
+            var domainOrWorkgroup = Environment.UserDomainName;
+            if (!string.IsNullOrWhiteSpace(domainOrWorkgroup)
+                && !domainOrWorkgroup.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+            {
+                identities.Add($@"{domainOrWorkgroup}\{normalized}");
+            }
         }
 
         foreach (var group in userGroups ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase))
