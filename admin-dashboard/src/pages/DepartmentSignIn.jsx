@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { fetchDepartmentsPublic, loginDashboard } from '../services/monitoringApi';
 import { useAuthSync } from '../hooks/useAuthSync';
+import { IconEye, IconEyeOff } from '../components/Icons';
 
 export default function DepartmentSignIn() {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ export default function DepartmentSignIn() {
   const [deptResultsOpen, setDeptResultsOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState('');
   const normalizeSearchText = (value) =>
@@ -174,7 +176,43 @@ export default function DepartmentSignIn() {
                     ) : departmentsError ? (
                       <p className="px-3 py-3 text-sm text-amber-800">{departmentsError}</p>
                     ) : filteredDepartments.length === 0 ? (
-                      <p className="px-3 py-3 text-sm text-slate-500">No matching departments.</p>
+                      departments.length === 0 ? (
+                      <p className="px-3 py-3 text-sm text-slate-500">
+                          <>
+                            Nothing returned from{' '}
+                            <code className="rounded bg-slate-100 px-1 text-xs">GET /api/departments</code>. Typical
+                            causes: Windows bridge or ngrok not running, wrong{' '}
+                            <code className="rounded bg-slate-100 px-1 text-xs">EXTERNAL_AUTH_URL</code>, or bridge
+                            token mismatch. To list folders from this machine&apos;s{' '}
+                            <code className="rounded bg-slate-100 px-1 text-xs">FILE_SERVER_ROOT</code>, set{' '}
+                            <code className="rounded bg-slate-100 px-1 text-xs">
+                              REMOTE_DEPARTMENTS_ONLY=false
+                            </code>{' '}
+                            in backend <code className="rounded bg-slate-100 px-1 text-xs">.env</code> and restart
+                            Node.
+                          </>
+                      </p>
+                      ) : (
+                        <div className="py-1">
+                          <p className="px-3 py-2 text-sm text-slate-600">
+                            Nothing matches &quot;{departmentQuery.trim()}&quot; (try another spelling—or choose below).
+                          </p>
+                          <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                            Departments from server
+                          </p>
+                          {departments.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => pickDepartment(item)}
+                              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            >
+                              {item.label || item.id}{' '}
+                              <span className="text-slate-400">({item.id})</span>
+                            </button>
+                          ))}
+                        </div>
+                      )
                     ) : (
                       filteredDepartments.map((item) => (
                         <button
@@ -212,14 +250,25 @@ export default function DepartmentSignIn() {
                 <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Password
                 </span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input w-full"
-                  autoComplete="current-password"
-                  disabled={submitting}
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="input w-full pr-11"
+                    autoComplete="current-password"
+                    disabled={submitting}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-800"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    disabled={submitting}
+                  >
+                    {showPassword ? <IconEye className="h-5 w-5" /> : <IconEyeOff className="h-5 w-5" />}
+                  </button>
+                </div>
               </label>
 
               {selectedDepartmentLabel ? (

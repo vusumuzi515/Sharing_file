@@ -225,7 +225,7 @@ export async function setupAdmin({ email, username, password }) {
 export async function fetchDepartmentsPublic() {
   let res;
   try {
-    res = await fetch(`${BASE_URL}/api/departments?refresh=1`, { headers: { ...getNgrokHeaders() } });
+    res = await fetch(`${BASE_URL}/api/departments?picker=1`, { headers: { ...getNgrokHeaders() } });
   } catch (e) {
     throw new Error(
       `Could not reach portal API (${e?.message || 'network error'}). Confirm the dev server proxies to Node on port 3000 or set VITE_BACKEND_API_URL.`,
@@ -501,6 +501,15 @@ export async function fetchDepartmentFiles(departmentId, query = '', project = '
   return request(`/api/files?department=${dep}${q}${proj}${pathParam}`);
 }
 
+export async function fetchOfficePreviewUrl({ fileId, department = '', project = '', serverFileId = '' }) {
+  const params = new URLSearchParams();
+  params.set('fileId', fileId || '');
+  if (department) params.set('department', department);
+  if (project) params.set('project', project);
+  if (serverFileId) params.set('serverFileId', serverFileId);
+  return request(`/api/office-preview-url?${params.toString()}`);
+}
+
 export async function fetchProjects(departmentId) {
   const dep = encodeURIComponent(departmentId || '');
   return request(`/api/projects?department=${dep}`);
@@ -511,14 +520,25 @@ export async function fetchAllFiles(query = '') {
   return request(`/api/files/all${q ? `?q=${q}` : ''}`);
 }
 
-export function getDownloadUrl(fileId) {
+export function getDownloadUrl(fileId, { department = '', project = '' } = {}) {
   const token = getToken();
-  return `${BASE_URL}/api/download?fileId=${encodeURIComponent(fileId)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  const params = new URLSearchParams();
+  params.set('fileId', fileId || '');
+  if (department) params.set('department', department);
+  if (project) params.set('project', project);
+  if (token) params.set('token', token);
+  return `${BASE_URL}/api/download?${params.toString()}`;
 }
 
-export function getPreviewUrl(fileId) {
+export function getPreviewUrl(fileId, { department = '', project = '' } = {}) {
   const token = getToken();
-  return `${BASE_URL}/api/download?fileId=${encodeURIComponent(fileId)}&preview=1${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  const params = new URLSearchParams();
+  params.set('fileId', fileId || '');
+  params.set('preview', '1');
+  if (department) params.set('department', department);
+  if (project) params.set('project', project);
+  if (token) params.set('token', token);
+  return `${BASE_URL}/api/download?${params.toString()}`;
 }
 
 export function getFilePreviewPageUrl(
@@ -532,6 +552,7 @@ export function getFilePreviewPageUrl(
     can_download = false,
     department = '',
     project,
+    serverFileId = '',
   } = {},
   context = {},
 ) {
@@ -549,7 +570,22 @@ export function getFilePreviewPageUrl(
     params.set('department', dept);
     if (proj !== '') params.set('project', proj);
   }
+  if (serverFileId) params.set('serverFileId', serverFileId);
   return `/file-preview?${params.toString()}`;
+}
+
+/** In-app route after leaving file preview (same department/folder when encoded on the URL, else Domain Portal). */
+export function getFilePreviewReturnPath(search = '') {
+  const qs = String(search || '').replace(/^\?/, '');
+  const params = new URLSearchParams(qs);
+  const department = String(params.get('department') || '').trim();
+  const project = String(params.get('project') || '').trim();
+  if (department) {
+    const q = new URLSearchParams({ department });
+    if (project) q.set('project', project);
+    return `/site-files?${q.toString()}`;
+  }
+  return '/dashboard';
 }
 
 /** Upload naming (unique vs replace) is decided on the server from inyatsi-config.json — not sent from the UI. */

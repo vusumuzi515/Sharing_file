@@ -793,7 +793,7 @@ export default function SiteFiles() {
                         ) : null}
                         {hasAccess && canDownload ? (
                           <a
-                            href={getDownloadUrl(file.id)}
+                            href={getDownloadUrl(file.id, { department: selectedDept, project: selectedProject })}
                             download
                             className="btn btn-sm btn-secondary"
                           >
@@ -840,7 +840,7 @@ export default function SiteFiles() {
                           </a>
                           {canDownload ? (
                             <a
-                              href={getDownloadUrl(file.id)}
+                              href={getDownloadUrl(file.id, { department: selectedDept, project: selectedProject })}
                               download
                               className="text-sm font-medium text-brand hover:text-brand-light hover:underline"
                             >
@@ -909,7 +909,7 @@ export default function SiteFiles() {
                                 </a>
                                 {canDownload ? (
                                   <a
-                                    href={getDownloadUrl(file.id)}
+                                    href={getDownloadUrl(file.id, { department: selectedDept, project: selectedProject })}
                                     download
                                     className="text-sm font-medium text-brand hover:text-brand-light hover:underline"
                                   >

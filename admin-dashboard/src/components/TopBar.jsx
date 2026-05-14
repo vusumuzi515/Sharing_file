@@ -25,8 +25,8 @@ export default function TopBar({ onMenuClick, pageTitle }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <div className="flex h-11 w-11 shrink-0 rounded-full border border-white/15 bg-white p-0.5 shadow-inner sm:h-12 sm:w-12">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <div className="mt-0.5 flex h-11 w-11 shrink-0 self-center rounded-full border border-white/15 bg-white p-0.5 shadow-inner sm:mt-1 sm:h-12 sm:w-12">
               <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden rounded-full bg-white">
                 <img
                   src="/splash-logo.png"

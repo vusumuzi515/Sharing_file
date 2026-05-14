@@ -181,6 +181,70 @@ const DEFAULT_PORTAL_POLICY = {
   uploadFileNaming: 'unique-suffix',
 };
 
+function normalizeExtSegment(e) {
+  const x = String(e || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\./, '');
+  if (!x || x.length > 24 || !/^[a-z0-9]+$/.test(x)) return null;
+  return x;
+}
+
+function validateDesktopHrefTemplate(tpl) {
+  const t = String(tpl || '').trim();
+  if (!t || t.length > 2048 || !t.includes('{downloadUrl}')) return null;
+  const probe = t.replace(/\{downloadUrl\}/gi, 'https://example.com/a');
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(probe)) return null;
+  const low = probe.toLowerCase();
+  if (low.startsWith('javascript:') || low.startsWith('data:') || low.startsWith('vbscript:')) return null;
+  return t;
+}
+
+/**
+ * Optional redirects from the portal to desktop apps (custom URL protocols).
+ * Configure under inyatsi-config.json → "portal" → "desktopEditHandlers" (see mergePortalPolicy).
+ */
+export function normalizeDesktopEditHandlers(raw) {
+  if (!raw) return {};
+  const out = {};
+
+  const pushRow = (extList, label, hrefTemplate) => {
+    const ht = validateDesktopHrefTemplate(hrefTemplate);
+    const lb = String(label || '').trim().slice(0, 160);
+    if (!ht || !lb) return;
+    for (const e of extList) {
+      const x = normalizeExtSegment(e);
+      if (!x) continue;
+      if (!out[x]) out[x] = [];
+      out[x].push({ label: lb, hrefTemplate: ht });
+    }
+  };
+
+  if (Array.isArray(raw)) {
+    for (const row of raw) {
+      if (!row || typeof row !== 'object') continue;
+      const exts = Array.isArray(row.extensions)
+        ? row.extensions
+        : row.extension != null
+          ? [row.extension]
+          : [];
+      if (!exts.length) continue;
+      pushRow(exts, row.label, row.hrefTemplate);
+    }
+  } else if (typeof raw === 'object') {
+    for (const [key, val] of Object.entries(raw)) {
+      const x = normalizeExtSegment(key);
+      if (!x) continue;
+      const rows = Array.isArray(val) ? val : val ? [val] : [];
+      for (const row of rows) {
+        if (row && typeof row === 'object') pushRow([x], row.label, row.hrefTemplate);
+      }
+    }
+  }
+
+  return out;
+}
+
 /**
  * Portal behaviour is defined on the file server in inyatsi-config.json → "portal".
  * Optional env override via load options (PORTAL_UPLOAD_FILE_NAMING on the API host).
@@ -201,9 +265,17 @@ function mergePortalPolicy(fileConfig, overrides = {}) {
     uploadFileNaming = DEFAULT_PORTAL_POLICY.uploadFileNaming;
   }
 
+  const rawHandlers =
+    fromFile.desktopEditHandlers ??
+    fromFile.desktop_edit_handlers ??
+    fileConfig?.desktopEditHandlers ??
+    fileConfig?.desktop_edit_handlers;
+  const desktopEditHandlers = normalizeDesktopEditHandlers(rawHandlers);
+
   return {
     uploadFileNaming,
     policySource,
+    desktopEditHandlers,
   };
 }
 

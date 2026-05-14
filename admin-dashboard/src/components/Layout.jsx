@@ -11,6 +11,7 @@ const pageTitles = {
   '/dashboard': 'Dashboard',
   '/admin-sign-in': 'Administrator',
   '/site-files': 'Department',
+  '/file-preview': 'File preview',
   '/recent-uploads': 'Recent',
   '/users': 'Users',
   '/activity-logs': 'Activity',
